@@ -10,12 +10,14 @@ import type {
 import {
   USE_MOCK_DATA,
   mockMessages,
+  mockOrganizations,
   mockPatientDetail,
   mockPatientList,
   mockProposeOrder,
   mockRequestLink,
   mockSendMessage,
 } from "./mock";
+import type { MockOrganization } from "./mock";
 
 /**
  * The single seam to the backend. Each hook returns DEV-ONLY mock data today. When the
@@ -97,6 +99,25 @@ export function useRequestLink(): Mutation<string, { status: string }> {
   // REAL: const run = (accessCode) => convexMutation(api.doctorPatients.requestLink, { accessCode });
   const run = useCallback((accessCode: string) => mockRequestLink(accessCode), []);
   return useMutation(run);
+}
+
+/**
+ * Organization directory search for the login org picker (public, pre-auth).
+ *
+ * Mock filters a tiny static list. Production must back this with a real server-side directory —
+ * the full US set can't ship in the SPA. Source it from CMS NPPES (endocrinology taxonomy
+ * 207RE0101X) or curate per onboarding. See DOCTOR_PORTAL_CANONICAL_BACKEND_SPEC.md §4.
+ *
+ * REAL: return useQuery(api.organizations.search, q.length >= 2 ? { query: q } : "skip") ?? [];
+ */
+export function useOrganizationSearch(query: string): MockOrganization[] {
+  return useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return mockOrganizations().filter(
+      (o) => o.name.toLowerCase().includes(q) || o.allowedDomains.some((d) => d.includes(q)),
+    );
+  }, [query]);
 }
 
 /** Small helper so message views can seed local state from the (memoized) query result. */

@@ -181,6 +181,12 @@ Convex client with Clerk identity attached.
 
 ### Queries
 
+- `organizations.search({ query })` → organizations matching the typed query, for the login
+  org picker. **Public (no auth)** — it runs before sign-in. Must be backed by a real
+  server-side directory, not a hardcoded list: the full US set is millions of records and can't
+  ship in the SPA. Source it from CMS NPPES (filter org/provider records by the endocrinology
+  taxonomy `207RE0101X`, plus related pediatric-endo codes) and/or curate per onboarding. Return
+  a capped result set (e.g. top 25) and `log()` nothing sensitive.
 - `doctors.getCurrent()` → discriminated state, **not** a throw on missing profile:
   `{ status: "active", doctor, organization } | { status: "not_provisioned" } |
   { status: "pending" } | { status: "suspended" }`.

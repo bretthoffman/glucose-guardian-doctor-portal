@@ -31,9 +31,8 @@ export function LoginOrgGate({
 
   if (!org) {
     return (
-      <AuthShell title="Find your organization" subtitle="Select where you work to continue.">
+      <AuthShell title="Find your organization" subtitle="Search for where you work to continue.">
         <OrgList
-          orgs={orgs}
           onSelect={(id) => {
             try {
               localStorage.setItem(ORG_KEY, id);

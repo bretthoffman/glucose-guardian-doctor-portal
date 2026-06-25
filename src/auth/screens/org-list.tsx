@@ -1,19 +1,17 @@
 import { useState } from "react";
 import { Building2, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import type { MockOrganization } from "@/data/mock";
+import { useOrganizationSearch } from "@/data/doctor-data";
 
-/** Presentational organization list with search. Used by the dev onboarding flow and the
- * production org-first login. */
-export function OrgList({
-  orgs,
-  onSelect,
-}: {
-  orgs: MockOrganization[];
-  onSelect: (id: string) => void;
-}) {
+/**
+ * Search-only organization picker. No pre-listed orgs — results appear as you type, from the
+ * directory search (a small static list in dev; a real server-side directory in production).
+ * Used by the dev onboarding flow and the production org-first login.
+ */
+export function OrgList({ onSelect }: { onSelect: (id: string) => void }) {
   const [q, setQ] = useState("");
-  const filtered = orgs.filter((o) => o.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const query = q.trim();
+  const results = useOrganizationSearch(q);
 
   return (
     <>
@@ -22,33 +20,40 @@ export function OrgList({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search organizations…"
+          placeholder="Search your hospital or clinic…"
           className="pl-9"
+          autoFocus
         />
       </div>
-      <div className="space-y-2">
-        {filtered.map((o) => (
-          <button
-            key={o.id}
-            onClick={() => onSelect(o.id)}
-            className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-secondary/40 transition-colors text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-foreground">{o.name}</p>
-              <p className="text-xs text-muted-foreground">@{o.allowedDomains[0]}</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          </button>
-        ))}
-        {filtered.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-6">
-            No organizations match &ldquo;{q}&rdquo;.
-          </p>
-        )}
-      </div>
+
+      {query.length < 2 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          Start typing your facility's name to search.
+        </p>
+      ) : results.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          No matches for &ldquo;{query}&rdquo;. Try the full facility name.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {results.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => onSelect(o.id)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-secondary/40 transition-colors text-left"
+            >
+              <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                <Building2 className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground">{o.name}</p>
+                <p className="text-xs text-muted-foreground">@{o.allowedDomains[0]}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }
