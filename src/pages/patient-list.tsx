@@ -5,10 +5,12 @@ import { useSession } from "@/auth/use-session";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatTime, getGlucoseColor } from "@/lib/utils";
+import { formatTime, getGlucoseColor, calculateA1C } from "@/lib/utils";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
-import { useDoctorPatients, useLinkPatient } from "@/data/doctor-data";
+import { useDoctorPatients, useLinkPatient, usePatientSnapshot } from "@/data/doctor-data";
 import type { PatientFlag } from "@/data/contracts";
+import type { LinkedPatient } from "@/data/linked-patients";
+import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 
 const FLAG_META: Record<PatientFlag, { label: string; className: string }> = {
   urgent_low: { label: "Urgent low", className: "bg-destructive/15 text-destructive border-destructive/30" },
@@ -26,29 +28,79 @@ function FlagChip({ flag }: { flag: PatientFlag }) {
   );
 }
 
-// Clinical triage priority: lower sorts first. Urgent highs/lows lead, then out-of-range,
-// then informational (pending order, stale data), then in-range.
-const FLAG_PRIORITY: Record<PatientFlag, number> = {
-  urgent_low: 0,
-  urgent_high: 0,
-  low: 1,
-  high: 1,
-  pending_order: 2,
-  no_recent_data: 3,
-};
-const ATTENTION_FLAGS: PatientFlag[] = ["urgent_low", "urgent_high", "low", "high"];
-
-function patientPriority(flags: PatientFlag[]): number {
-  return flags.length ? Math.min(...flags.map((f) => FLAG_PRIORITY[f])) : 5;
-}
-function needsAttention(flags: PatientFlag[]): boolean {
-  return flags.some((f) => ATTENTION_FLAGS.includes(f));
-}
-
 function diabetesLabel(t?: string): string | undefined {
   if (t === "type1") return "Type 1";
   if (t === "type2") return "Type 2";
   return t ? "Other" : undefined;
+}
+
+function flagsFromSnapshot(s: PatientSnapshot): PatientFlag[] {
+  const latest = s.glucoseReadings?.[0];
+  if (!latest) return ["no_recent_data"];
+  const v = latest.value;
+  const a = s.alertPreferences;
+  const flags: PatientFlag[] = [];
+  if (a?.urgentHighThreshold && v >= a.urgentHighThreshold) flags.push("urgent_high");
+  else if (a?.highThreshold && v > a.highThreshold) flags.push("high");
+  if (a?.urgentLowThreshold && v <= a.urgentLowThreshold) flags.push("urgent_low");
+  else if (a?.lowThreshold && v < a.lowThreshold) flags.push("low");
+  return flags;
+}
+
+function PatientCard({ entry, onOpen }: { entry: LinkedPatient; onOpen: () => void }) {
+  const { snapshot, isLoading, error } = usePatientSnapshot(entry.code);
+  const profile = snapshot?.profile;
+  const latest = snapshot?.glucoseReadings?.[0];
+  const flags = snapshot ? flagsFromSnapshot(snapshot) : [];
+  const a1c = snapshot?.glucoseReadings?.length ? calculateA1C(snapshot.glucoseReadings) : undefined;
+  const dtype = diabetesLabel(profile?.diabetesType);
+  const accent =
+    flags.includes("urgent_low") || flags.includes("urgent_high")
+      ? "border-l-4 border-l-destructive"
+      : flags.includes("high") || flags.includes("low")
+        ? "border-l-4 border-l-amber-500"
+        : "";
+
+  return (
+    <button onClick={onOpen} className="w-full text-left">
+      <Card className={`hover:border-primary/40 transition-colors ${accent}`}>
+        <CardContent className="p-5 flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-foreground">{profile?.childName ?? entry.name}</span>
+              {dtype && (
+                <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                  {dtype}
+                </span>
+              )}
+              <span className="text-xs font-mono text-muted-foreground">{entry.code}</span>
+              {flags.map((f) => (
+                <FlagChip key={f} flag={f} />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {isLoading
+                ? "Loading…"
+                : error
+                  ? "Data locked — backend requires doctor sign-in"
+                  : latest
+                    ? `Last reading ${formatTime(latest.timestamp)}`
+                    : "Pending sync — no data yet"}
+              {a1c != null && ` · A1C ~${a1c}%`}
+            </p>
+          </div>
+          {latest && (
+            <span
+              className={`text-sm font-semibold px-2.5 py-0.5 rounded-full ${getGlucoseColor(latest.value)}`}
+            >
+              {latest.value}
+            </span>
+          )}
+          <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+        </CardContent>
+      </Card>
+    </button>
+  );
 }
 
 export function PatientList() {
@@ -64,12 +116,10 @@ export function PatientList() {
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const sorted = patients
-    ? [...patients].sort((a, b) => patientPriority(a.flags) - patientPriority(b.flags))
-    : undefined;
-  const attentionCount = patients?.filter((p) => needsAttention(p.flags)).length ?? 0;
   const q = query.trim().toLowerCase();
-  const visible = sorted?.filter((p) => p.displayName.toLowerCase().includes(q));
+  const visible = patients.filter(
+    (p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q),
+  );
 
   async function handleLink(e: React.FormEvent) {
     e.preventDefault();
@@ -77,7 +127,7 @@ export function PatientList() {
     try {
       const linked = await linkPatient(code.trim().toUpperCase());
       refetch();
-      setLinkMsg(`Linked ${linked.displayName} — now in your list below.`);
+      setLinkMsg(`Linked ${linked.name} — now in your list below.`);
       setCode("");
     } catch (err) {
       setLinkMsg(err instanceof Error ? err.message : "Could not link patient.");
@@ -124,11 +174,9 @@ export function PatientList() {
         <section>
           <h1 className="text-2xl font-display font-bold text-foreground mb-1">Your patients</h1>
           <p className="text-muted-foreground text-sm">
-            {patients === undefined
-              ? "Patients who have linked their Gluco Guardian app to your care."
-              : attentionCount > 0
-                ? `${attentionCount} of ${patients.length} need attention — shown first.`
-                : `All ${patients.length} patients in range.`}
+            {patients.length === 0
+              ? "Link a patient with the Doctor Code from their Glucose Guardian app."
+              : `${patients.length} linked patient${patients.length === 1 ? "" : "s"}.`}
           </p>
         </section>
 
@@ -137,12 +185,12 @@ export function PatientList() {
             <form onSubmit={handleLink} className="flex flex-col sm:flex-row gap-3 sm:items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Link a patient by access code
+                  Link a patient by Doctor Code
                 </label>
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. EMMA01"
+                  placeholder="e.g. 7ZD36Z"
                   className="uppercase tracking-widest"
                   autoComplete="off"
                 />
@@ -155,7 +203,7 @@ export function PatientList() {
           </CardContent>
         </Card>
 
-        {patients && patients.length > 0 && (
+        {patients.length > 0 && (
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
@@ -168,64 +216,21 @@ export function PatientList() {
         )}
 
         <section className="space-y-3">
-          {patients === undefined ? (
-            <div className="text-center py-12 text-muted-foreground">Loading patients…</div>
-          ) : patients.length === 0 ? (
+          {patients.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
-              No linked patients yet. Use the form above to link a patient by access code.
+              No linked patients yet. Enter a Doctor Code above to add one.
             </div>
-          ) : visible!.length === 0 ? (
+          ) : visible.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No patients match &ldquo;{query}&rdquo;.
             </div>
           ) : (
-            visible!.map((p) => (
-              <button
-                key={p.patientId}
-                onClick={() => setLocation(`/patient/${p.accessCode}/overview`)}
-                className="w-full text-left"
-              >
-                <Card
-                  className={`hover:border-primary/40 transition-colors ${
-                    patientPriority(p.flags) === 0
-                      ? "border-l-4 border-l-destructive"
-                      : patientPriority(p.flags) === 1
-                        ? "border-l-4 border-l-amber-500"
-                        : ""
-                  }`}
-                >
-                  <CardContent className="p-5 flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-foreground">{p.displayName}</span>
-                        {diabetesLabel(p.diabetesType) && (
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-                            {diabetesLabel(p.diabetesType)}
-                          </span>
-                        )}
-                        <span className="text-xs font-mono text-muted-foreground">{p.accessCode}</span>
-                        {p.flags.map((f) => (
-                          <FlagChip key={f} flag={f} />
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {p.hasData && p.lastReadingAt
-                          ? `Last reading ${formatTime(p.lastReadingAt)}`
-                          : "Pending sync — no data yet"}
-                        {p.a1cEstimate != null && ` · A1C ~${p.a1cEstimate}%`}
-                      </p>
-                    </div>
-                    {p.hasData && p.lastReadingValue != null && (
-                      <span
-                        className={`text-sm font-semibold px-2.5 py-0.5 rounded-full ${getGlucoseColor(p.lastReadingValue)}`}
-                      >
-                        {p.lastReadingValue}
-                      </span>
-                    )}
-                    <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-                  </CardContent>
-                </Card>
-              </button>
+            visible.map((entry) => (
+              <PatientCard
+                key={entry.code}
+                entry={entry}
+                onOpen={() => setLocation(`/patient/${entry.code}/overview`)}
+              />
             ))
           )}
         </section>

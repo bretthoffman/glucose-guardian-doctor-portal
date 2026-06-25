@@ -205,10 +205,14 @@ Convex client with Clerk identity attached.
 ### Mutations
 
 - `doctorMessages.send({ patientId, body })`. Authz: `assertGrant`. Audit.
-- `doctorPatients.requestLink({ accessCode })` → creates a `pending` grant (or initiates
-  a one-time/expiring code flow). **Linking requires patient/caregiver approval** — a
-  doctor knowing a 6-char code must not auto-grant access. The patient app confirms.
-  Authz: `requireActiveDoctor`; rate-limit. (Requires an app-side approval step.)
+- `doctorPatients.linkByDoctorCode({ code })` → resolves the app-generated **Doctor Code**
+  (full-edit, e.g. `7ZD36Z`) to a patient and creates an active grant **immediately** — the
+  code itself is the patient's consent, so there is no separate approval step. (The app also
+  issues a view-only **Caregiver Code**; this portal uses only the Doctor Code.) Returns the
+  linked patient. Authz: `requireActiveDoctor`; rate-limit; reject unknown/expired codes.
+  NOTE: the existing backend already serves this via REST HTTP actions — `POST /api/doctor/login`
+  (validate) and `GET /api/doctor/patient/:code` (real `PatientSnapshot`). The portal can use
+  those today as the bridge; the Convex function above is the clean target.
 - `therapyOrders.propose({ patientId, changes, note, baseVersion })`. Authz:
   `assertGrant` with `prescriber: true` + same org. Optimistic concurrency: reject if
   `baseVersion !== current.version`. Range/sanity validation (flag implausible ratios).

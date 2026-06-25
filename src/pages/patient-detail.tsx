@@ -17,7 +17,7 @@ import { OverviewPanel } from "@/components/panels/OverviewPanel";
 import { ChartPanel } from "@/components/panels/ChartPanel";
 import { InsulinPanel } from "@/components/panels/InsulinPanel";
 import { TherapyOrdersPanel } from "@/components/panels/TherapyOrdersPanel";
-import { MessagesView } from "@/components/panels/MessagesView";
+import { MessagesPanel } from "@/components/panels/MessagesPanel";
 import { usePatientDetail } from "@/data/doctor-data";
 
 const TABS = [
@@ -101,7 +101,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
             {current === "insulin" && <InsulinPanel data={detail.snapshot} />}
             {current === "orders" && <TherapyOrdersPanel detail={detail} />}
             {current === "messages" && (
-              <MessagesView
+              <MessagesPanel
                 accessCode={detail.accessCode}
                 patientName={detail.snapshot.profile.childName}
               />

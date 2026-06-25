@@ -1,59 +1,129 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DoctorMessage } from "@doctor-portal/api-client-react";
+import { useDoctorLogin, useGetPatientData } from "@doctor-portal/api-client-react";
+import type { DoctorMessage, PatientSnapshot } from "@doctor-portal/api-client-react";
 import type {
-  DoctorPatientListItem,
   PatientDetail,
   ProposeOrderInput,
   QueryResult,
   TherapyOrder,
 } from "./contracts";
-import {
-  USE_MOCK_DATA,
-  mockMessages,
-  mockOrganizations,
-  mockPatientDetail,
-  mockLinkPatient,
-  mockPatientList,
-  mockProposeOrder,
-  mockSendMessage,
-} from "./mock";
+import { USE_MOCK_DATA, mockMessages, mockOrganizations, mockProposeOrder, mockSendMessage } from "./mock";
 import type { MockOrganization } from "./mock";
+import { type LinkedPatient, addLinkedPatient, getLinkedPatients } from "./linked-patients";
 
 /**
- * The single seam to the backend. Each hook returns DEV-ONLY mock data today. When the
- * canonical backend ships its functions and the generated Convex API is importable here
- * (DOCTOR_PORTAL_CANONICAL_BACKEND_SPEC.md §4, §7), replace each mock branch with the real
- * `useQuery` / `useMutation(api.*)` shown in the comment above it. No `api.*` is referenced
- * until then, so nothing imaginary is wired.
+ * Patient data comes from the live Glucose Guardian backend via the existing REST endpoints,
+ * keyed by the app-generated Doctor Code (full-edit). The doctor's linked codes are stored on
+ * the device for now; a Convex grant table is the eventual home (see the backend spec).
+ *
+ * Auth/onboarding and the organization directory stay mock in dev until Clerk + Convex land.
  */
 
-export function useDoctorPatients(): QueryResult<DoctorPatientListItem[]> & {
-  refetch: () => void;
+// ---- Real patient data by Doctor Code ----
+
+export function usePatientSnapshot(accessCode: string): {
+  snapshot: PatientSnapshot | undefined;
+  isLoading: boolean;
+  error: Error | null;
 } {
-  // REAL: const data = useQuery(api.doctorPatients.list); — live, so refetch is a no-op there.
-  const [version, setVersion] = useState(0);
-  const data = useMemo(() => (USE_MOCK_DATA ? mockPatientList() : undefined), [version]);
-  return { data, isLoading: false, error: null, refetch: () => setVersion((v) => v + 1) };
+  const res = useGetPatientData(accessCode, {
+    // @ts-expect-error Generated hook merges partial query options at runtime
+    query: { enabled: !!accessCode, refetchInterval: 30000 },
+  });
+  return {
+    snapshot: res.data as PatientSnapshot | undefined,
+    isLoading: res.isLoading,
+    error: (res.error as Error | null) ?? null,
+  };
+}
+
+function snapshotToDetail(accessCode: string, snapshot: PatientSnapshot): PatientDetail {
+  const p = snapshot.profile;
+  const a = snapshot.alertPreferences;
+  return {
+    patientId: accessCode,
+    accessCode,
+    snapshot,
+    canPrescribe: true,
+    activeOrder: {
+      id: `order_${accessCode}`,
+      patientId: accessCode,
+      version: 1,
+      status: "active",
+      proposedByDoctorId: "app",
+      proposedByName: "Current settings",
+      proposedAt: snapshot.syncedAt,
+      carbRatio: p.carbRatio,
+      correctionFactor: p.correctionFactor,
+      targetGlucose: p.targetGlucose,
+      insulinTypes: p.insulinTypes,
+      alertThresholds: a
+        ? {
+            low: a.lowThreshold,
+            high: a.highThreshold,
+            urgentLow: a.urgentLowThreshold,
+            urgentHigh: a.urgentHighThreshold,
+          }
+        : undefined,
+    },
+  };
 }
 
 export function usePatientDetail(accessCode: string): QueryResult<PatientDetail> {
-  // REAL: const data = useQuery(api.doctorPatients.get, { accessCode });
-  //       return { data, isLoading: data === undefined, error: null };
+  const { snapshot, isLoading, error } = usePatientSnapshot(accessCode);
   const data = useMemo(
-    () => (USE_MOCK_DATA ? mockPatientDetail(accessCode) : undefined),
-    [accessCode],
+    () => (snapshot ? snapshotToDetail(accessCode, snapshot) : undefined),
+    [accessCode, snapshot],
   );
-  return { data, isLoading: false, error: null };
+  return { data, isLoading, error };
 }
 
-export function useDoctorMessages(accessCode: string): QueryResult<DoctorMessage[]> {
-  // REAL: const data = useQuery(api.doctorMessages.list, { accessCode });
-  const data = useMemo(
-    () => (USE_MOCK_DATA ? mockMessages(accessCode) : undefined),
-    [accessCode],
-  );
-  return { data, isLoading: false, error: null };
+// ---- Linked patients (device-stored until a backend grant table exists) ----
+
+export function useDoctorPatients(): { data: LinkedPatient[]; refetch: () => void } {
+  const [version, setVersion] = useState(0);
+  const data = useMemo(() => getLinkedPatients(), [version]);
+  return { data, refetch: () => setVersion((v) => v + 1) };
 }
+
+export function useLinkPatient(): {
+  mutate: (code: string) => Promise<LinkedPatient>;
+  isPending: boolean;
+  error: Error | null;
+} {
+  const login = useDoctorLogin();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const mutate = useCallback(
+    async (code: string) => {
+      setIsPending(true);
+      setError(null);
+      try {
+        const res = await login.mutateAsync({ data: { accessCode: code } });
+        if (!res.success) {
+          throw new Error("That code isn't valid. Check the Doctor Code in the patient's app.");
+        }
+        const entry: LinkedPatient = {
+          code: res.accessCode,
+          name: res.patientName ?? code,
+          hasData: res.hasData,
+        };
+        addLinkedPatient(entry);
+        return entry;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error("Could not link patient.");
+        setError(err);
+        throw err;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [login],
+  );
+  return { mutate, isPending, error };
+}
+
+// ---- Local / mock helpers (treatment-settings propose, messages, org search) ----
 
 export interface Mutation<TInput, TResult> {
   mutate: (input: TInput) => Promise<TResult>;
@@ -61,7 +131,7 @@ export interface Mutation<TInput, TResult> {
   error: Error | null;
 }
 
-function useMutation<TInput, TResult>(
+function useLocalMutation<TInput, TResult>(
   run: (input: TInput) => Promise<TResult>,
 ): Mutation<TInput, TResult> {
   const [isPending, setIsPending] = useState(false);
@@ -86,44 +156,26 @@ function useMutation<TInput, TResult>(
 }
 
 export function useProposeOrder(): Mutation<ProposeOrderInput, TherapyOrder> {
-  // REAL: const run = (input) => convexMutation(api.therapyOrders.propose, input);
+  // Local for now — writing a ratio change back to the patient app needs a backend endpoint
+  // (DOCTOR_PORTAL_CANONICAL_BACKEND_SPEC.md therapyOrders.propose). The UI shows real current
+  // settings; the proposed change is held client-side until that endpoint exists.
   const run = useCallback((input: ProposeOrderInput) => mockProposeOrder(input), []);
-  return useMutation(run);
+  return useLocalMutation(run);
 }
 
 export function useSendMessage(accessCode: string): Mutation<string, DoctorMessage> {
-  // REAL: const run = (text) => convexMutation(api.doctorMessages.send, { accessCode, body: text });
   const run = useCallback((text: string) => mockSendMessage(accessCode, text), [accessCode]);
-  return useMutation(run);
+  return useLocalMutation(run);
 }
 
-export function useLinkPatient(): Mutation<string, DoctorPatientListItem> {
-  // REAL: const run = (accessCode) => convexMutation(api.doctorPatients.link, { accessCode });
-  // Auto-links (no approval request); the patient appears in the list immediately.
-  const run = useCallback((accessCode: string) => mockLinkPatient(accessCode), []);
-  return useMutation(run);
+export function useDoctorMessages(accessCode: string): QueryResult<DoctorMessage[]> {
+  const data = useMemo(
+    () => (USE_MOCK_DATA ? mockMessages(accessCode) : undefined),
+    [accessCode],
+  );
+  return { data, isLoading: false, error: null };
 }
 
-/**
- * Organization directory search for the login org picker (public, pre-auth).
- *
- * Mock filters a tiny static list. Production must back this with a real server-side directory —
- * the full US set can't ship in the SPA. Source it from CMS NPPES (endocrinology taxonomy
- * 207RE0101X) or curate per onboarding. See DOCTOR_PORTAL_CANONICAL_BACKEND_SPEC.md §4.
- *
- * REAL: return useQuery(api.organizations.search, q.length >= 2 ? { query: q } : "skip") ?? [];
- */
-export function useOrganizationSearch(query: string): MockOrganization[] {
-  return useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return mockOrganizations().filter(
-      (o) => o.name.toLowerCase().includes(q) || o.allowedDomains.some((d) => d.includes(q)),
-    );
-  }, [query]);
-}
-
-/** Small helper so message views can seed local state from the (memoized) query result. */
 export function useSeededMessages(accessCode: string): {
   messages: DoctorMessage[];
   append: (m: DoctorMessage) => void;
@@ -135,4 +187,14 @@ export function useSeededMessages(accessCode: string): {
   }, [data]);
   const append = useCallback((m: DoctorMessage) => setMessages((prev) => [...prev, m]), []);
   return { messages, append };
+}
+
+export function useOrganizationSearch(query: string): MockOrganization[] {
+  return useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return mockOrganizations().filter(
+      (o) => o.name.toLowerCase().includes(q) || o.allowedDomains.some((d) => d.includes(q)),
+    );
+  }, [query]);
 }
