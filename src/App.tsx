@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 // Pages
 import SignInPage from "@/pages/sign-in";
+import SignUpPage from "@/pages/sign-up";
 import { PatientList } from "@/pages/patient-list";
 import { PatientDetail } from "@/pages/patient-detail";
 import NotFound from "@/pages/not-found";
@@ -25,6 +26,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={SignInPage} />
+      <Route path="/sign-up" component={SignUpPage} />
       <Route path="/">
         <AuthGate>
           <PatientList />

@@ -1,7 +1,7 @@
-import { SignIn } from "@clerk/clerk-react";
+import { SignUp } from "@clerk/clerk-react";
 import { LoginOrgGate } from "@/auth/login-org-gate";
 
-// Doctors sign in with a work email, not Google — hide social + the divider.
+// Work-email only — no Google.
 const EMAIL_ONLY = {
   elements: {
     socialButtonsRoot: { display: "none" },
@@ -11,10 +11,10 @@ const EMAIL_ONLY = {
   },
 };
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
-    <LoginOrgGate title="Sign in">
-      {() => <SignIn signUpUrl="/sign-up" fallbackRedirectUrl="/" appearance={EMAIL_ONLY} />}
+    <LoginOrgGate title="Create your account">
+      {() => <SignUp signInUrl="/login" fallbackRedirectUrl="/" appearance={EMAIL_ONLY} />}
     </LoginOrgGate>
   );
 }

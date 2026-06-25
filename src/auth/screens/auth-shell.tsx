@@ -6,11 +6,13 @@ export function AuthShell({
   subtitle,
   children,
   width = "max-w-md",
+  card = true,
 }: {
   title: string;
   subtitle?: string;
   children: ReactNode;
   width?: string;
+  card?: boolean;
 }) {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background relative overflow-hidden">
@@ -31,7 +33,11 @@ export function AuthShell({
           <h1 className="text-2xl font-bold text-foreground">{title}</h1>
           {subtitle && <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>}
         </div>
-        <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-xl">{children}</div>
+        {card ? (
+          <div className="bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-xl">{children}</div>
+        ) : (
+          <div className="flex flex-col items-center">{children}</div>
+        )}
       </div>
     </div>
   );
