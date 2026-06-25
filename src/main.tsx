@@ -1,15 +1,17 @@
 import { createRoot } from "react-dom/client";
+import { ClerkProvider, useAuth } from "@clerk/clerk-react";
+import { ConvexReactClient } from "convex/react";
+import { ConvexProviderWithClerk } from "convex/react-clerk";
 import App from "./App";
+import { env } from "@/lib/env";
 import "./index.css";
 
-const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
-if (import.meta.env.DEV && !apiBase) {
-  const proxyTarget = import.meta.env.VITE_API_PROXY_TARGET ?? "http://localhost:3000";
-  console.info(`[doctor-portal] API: /api/* proxied to ${proxyTarget}`);
-} else if (import.meta.env.PROD && !apiBase) {
-  console.warn(
-    "[doctor-portal] VITE_API_BASE_URL is not set; API calls use same-origin /api paths.",
-  );
-}
+const convex = new ConvexReactClient(env.convexUrl);
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <ClerkProvider publishableKey={env.clerkPublishableKey} afterSignOutUrl="/login">
+    <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+      <App />
+    </ConvexProviderWithClerk>
+  </ClerkProvider>,
+);

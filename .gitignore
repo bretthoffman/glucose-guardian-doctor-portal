@@ -9,3 +9,6 @@ dist/
 lib/api-client-react/dist/
 lib/api-client-react/tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Claude Code machine-local settings (keep launch.json shareable)
+.claude/settings.local.json
