@@ -12,9 +12,9 @@ import {
   mockMessages,
   mockOrganizations,
   mockPatientDetail,
+  mockLinkPatient,
   mockPatientList,
   mockProposeOrder,
-  mockRequestLink,
   mockSendMessage,
 } from "./mock";
 import type { MockOrganization } from "./mock";
@@ -27,11 +27,13 @@ import type { MockOrganization } from "./mock";
  * until then, so nothing imaginary is wired.
  */
 
-export function useDoctorPatients(): QueryResult<DoctorPatientListItem[]> {
-  // REAL: const data = useQuery(api.doctorPatients.list);
-  //       return { data, isLoading: data === undefined, error: null };
-  const data = useMemo(() => (USE_MOCK_DATA ? mockPatientList() : undefined), []);
-  return { data, isLoading: false, error: null };
+export function useDoctorPatients(): QueryResult<DoctorPatientListItem[]> & {
+  refetch: () => void;
+} {
+  // REAL: const data = useQuery(api.doctorPatients.list); — live, so refetch is a no-op there.
+  const [version, setVersion] = useState(0);
+  const data = useMemo(() => (USE_MOCK_DATA ? mockPatientList() : undefined), [version]);
+  return { data, isLoading: false, error: null, refetch: () => setVersion((v) => v + 1) };
 }
 
 export function usePatientDetail(accessCode: string): QueryResult<PatientDetail> {
@@ -95,9 +97,10 @@ export function useSendMessage(accessCode: string): Mutation<string, DoctorMessa
   return useMutation(run);
 }
 
-export function useRequestLink(): Mutation<string, { status: string }> {
-  // REAL: const run = (accessCode) => convexMutation(api.doctorPatients.requestLink, { accessCode });
-  const run = useCallback((accessCode: string) => mockRequestLink(accessCode), []);
+export function useLinkPatient(): Mutation<string, DoctorPatientListItem> {
+  // REAL: const run = (accessCode) => convexMutation(api.doctorPatients.link, { accessCode });
+  // Auto-links (no approval request); the patient appears in the list immediately.
+  const run = useCallback((accessCode: string) => mockLinkPatient(accessCode), []);
   return useMutation(run);
 }
 

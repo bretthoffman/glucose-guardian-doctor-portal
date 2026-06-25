@@ -12,6 +12,8 @@ export interface DoctorPatientListItem {
   patientId: string;
   accessCode: string;
   displayName: string;
+  diabetesType?: string;
+  a1cEstimate?: string;
   hasData: boolean;
   lastReadingValue?: number;
   lastReadingAt?: string;

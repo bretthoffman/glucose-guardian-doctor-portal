@@ -24,7 +24,7 @@ const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "chart", label: "CGM Chart", icon: LineChart },
   { id: "insulin", label: "Insulin Log", icon: Syringe },
-  { id: "orders", label: "Therapy Orders", icon: Sliders },
+  { id: "orders", label: "Treatment Settings", icon: Sliders },
   { id: "messages", label: "Messages", icon: MessageCircle },
 ];
 

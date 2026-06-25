@@ -118,7 +118,7 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
       <div>
         <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
           <Sliders className="w-6 h-6 text-primary" />
-          Therapy orders
+          Treatment settings
         </h2>
         <p className="text-muted-foreground text-sm mt-1">
           These settings drive dosing in the patient's app. Changes are proposed, then take effect

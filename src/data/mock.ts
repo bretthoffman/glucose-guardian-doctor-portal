@@ -12,6 +12,7 @@ import type {
   ProposeOrderInput,
   TherapyOrder,
 } from "./contracts";
+import { calculateA1C } from "@/lib/utils";
 
 /**
  * DEV-ONLY mock data. Production builds (`import.meta.env.DEV === false`) never mock — the
@@ -267,24 +268,40 @@ const SPECS: PatientSpec[] = [
 
 const DETAILS: PatientDetail[] = SPECS.map(buildDetail);
 
+function toListItem(d: PatientDetail, flags: DoctorPatientListItem["flags"]): DoctorPatientListItem {
+  const latest = d.snapshot.glucoseReadings[0];
+  return {
+    patientId: d.patientId,
+    accessCode: d.accessCode,
+    displayName: d.snapshot.profile.childName,
+    diabetesType: d.snapshot.profile.diabetesType,
+    a1cEstimate: d.snapshot.glucoseReadings.length
+      ? (calculateA1C(d.snapshot.glucoseReadings) ?? undefined)
+      : undefined,
+    hasData: d.snapshot.glucoseReadings.length > 0,
+    lastReadingValue: latest?.value,
+    lastReadingAt: latest?.timestamp,
+    syncedAt: d.snapshot.syncedAt,
+    flags,
+  };
+}
+
+/** Patients linked at runtime by access code — auto-added, no patient approval. */
+const linkedExtras: PatientDetail[] = [];
+
 export function mockPatientList(): DoctorPatientListItem[] {
-  return DETAILS.map((d) => {
-    const latest = d.snapshot.glucoseReadings[0];
-    return {
-      patientId: d.patientId,
-      accessCode: d.accessCode,
-      displayName: d.snapshot.profile.childName,
-      hasData: d.snapshot.glucoseReadings.length > 0,
-      lastReadingValue: latest?.value,
-      lastReadingAt: latest?.timestamp,
-      syncedAt: d.snapshot.syncedAt,
-      flags: SPECS.find((s) => s.patientId === d.patientId)!.flags,
-    };
-  });
+  const base = DETAILS.map((d) =>
+    toListItem(d, SPECS.find((s) => s.patientId === d.patientId)!.flags),
+  );
+  const extra = linkedExtras.map((d) => toListItem(d, ["no_recent_data"]));
+  return [...extra, ...base]; // newly linked patients appear on top
 }
 
 export function mockPatientDetail(accessCode: string): PatientDetail | undefined {
-  return DETAILS.find((d) => d.accessCode === accessCode);
+  return (
+    DETAILS.find((d) => d.accessCode === accessCode) ??
+    linkedExtras.find((d) => d.accessCode === accessCode)
+  );
 }
 
 export function mockMessages(accessCode: string): DoctorMessage[] {
@@ -333,8 +350,52 @@ export async function mockSendMessage(
   };
 }
 
-export async function mockRequestLink(accessCode: string): Promise<{ status: string }> {
-  await delay(500);
-  if (!accessCode.trim()) throw new Error("Enter an access code.");
-  return { status: "pending" };
+function buildPendingDetail(accessCode: string): PatientDetail {
+  const id = `pat_${accessCode.toLowerCase()}`;
+  const snapshot: PatientSnapshot = {
+    accessCode,
+    profile: { childName: `New patient · ${accessCode}`, diabetesType: "type1", dateOfBirth: "" },
+    glucoseReadings: [],
+    insulinLog: [],
+    foodLog: [],
+    messages: [],
+    alertPreferences: { lowThreshold: 70, highThreshold: 180, urgentLowThreshold: 55, urgentHighThreshold: 250 },
+    syncedAt: iso(0),
+  };
+  return {
+    patientId: id,
+    accessCode,
+    snapshot,
+    canPrescribe: true,
+    activeOrder: {
+      id: `order_${id}_active`,
+      patientId: id,
+      version: 1,
+      status: "active",
+      proposedByDoctorId: MOCK_DOCTOR.id,
+      proposedByName: MOCK_DOCTOR.displayName,
+      proposedAt: iso(0),
+      carbRatio: 15,
+      correctionFactor: 50,
+      targetGlucose: 120,
+      insulinTypes: [],
+      alertThresholds: { low: 70, high: 180, urgentLow: 55, urgentHigh: 250 },
+    },
+  };
+}
+
+/** Auto-link a patient by access code — adds them immediately, no approval request. */
+export async function mockLinkPatient(accessCode: string): Promise<DoctorPatientListItem> {
+  await delay(400);
+  const code = accessCode.trim().toUpperCase();
+  if (!code) throw new Error("Enter an access code.");
+  if (
+    DETAILS.some((d) => d.accessCode === code) ||
+    linkedExtras.some((d) => d.accessCode === code)
+  ) {
+    throw new Error("That patient is already in your list.");
+  }
+  const detail = buildPendingDetail(code);
+  linkedExtras.unshift(detail);
+  return toListItem(detail, ["no_recent_data"]);
 }
