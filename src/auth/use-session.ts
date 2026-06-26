@@ -1,29 +1,21 @@
 import { useContext } from "react";
-import { useClerk } from "@clerk/clerk-react";
-import { USE_MOCK_DATA } from "@/data/mock";
 import { MockSessionContext } from "./mock-session";
 
 /**
- * Unified session controls for the app shell (sign out, lock). Backed by the mock session in
- * dev and by Clerk in production. Both underlying hooks are always called to satisfy the rules
- * of hooks; only the result is chosen.
+ * App-shell session controls (sign out, lock) backed by the doctor session.
  */
 export function useSession(): {
   signOut: () => void;
   lock: () => void;
   canLock: boolean;
 } {
-  const clerk = useClerk();
-  const mock = useContext(MockSessionContext);
-
-  if (USE_MOCK_DATA && mock) {
-    return { signOut: mock.actions.signOut, lock: mock.actions.lock, canLock: mock.canLock };
+  const session = useContext(MockSessionContext);
+  if (session) {
+    return {
+      signOut: session.actions.signOut,
+      lock: session.actions.lock,
+      canLock: session.canLock,
+    };
   }
-  return {
-    signOut: () => {
-      void clerk.signOut();
-    },
-    lock: () => {},
-    canLock: false,
-  };
+  return { signOut: () => {}, lock: () => {}, canLock: false };
 }
