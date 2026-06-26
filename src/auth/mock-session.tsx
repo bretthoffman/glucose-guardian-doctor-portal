@@ -7,42 +7,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Organization } from "./use-current-doctor";
-import { mockOrganizations } from "@/data/mock";
+import type { DoctorProfile } from "@doctor-portal/api-client-react";
+import { mockOrganizations, type MockOrganization } from "@/data/mock";
+import { clearDoctorSession, loadDoctorSession, storeDoctorSession } from "./doctor-auth";
 
 /**
- * DEV-ONLY mock of the doctor session/onboarding flow, so the redesigned first-run
- * experience (choose org → work-email sign-in → profile → optional PIN → lock) can be built
- * and demoed without Clerk or the backend.
- *
- * In production this whole layer is replaced by Clerk (identity, sessions, MFA, passkeys) +
- * Convex (org membership, profile, provisioning) + a device-bound PIN lock. The PIN here is a
- * convenience lock over a live session — never primary auth — matching the agreed model.
+ * Doctor session for the portal: organization picker → real account sign-in (backend doctor
+ * accounts, Bearer token) → optional device PIN lock. The token/doctor live in doctor-auth
+ * (sessionStorage); org + PIN preferences live on the device (localStorage).
  */
-
-export type SessionStep =
-  | "choose_org"
-  | "authenticate"
-  | "complete_profile"
-  | "set_pin"
-  | "locked"
-  | "ready";
-
-export interface DoctorOnboardingProfile {
-  fullName: string;
-  title: string;
-  specialty: string;
-  npi?: string;
-}
+export type SessionStep = "choose_org" | "authenticate" | "set_pin" | "locked" | "ready";
 
 interface SessionState {
   orgId?: string;
-  signedIn: boolean;
-  email?: string;
-  profile?: DoctorOnboardingProfile;
   pinHash?: string;
-  pinSkipped: boolean;
   sharedDevice: boolean;
+  pinSkipped: boolean;
+  doctor?: DoctorProfile;
   locked: boolean;
   attempts: number;
 }
@@ -50,8 +31,7 @@ interface SessionState {
 export interface SessionActions {
   chooseOrg: (orgId: string) => void;
   resetOrg: () => void;
-  authenticate: (email: string) => void;
-  completeProfile: (profile: DoctorOnboardingProfile) => void;
+  authenticate: (doctor: DoctorProfile, token: string, expiresAt: number) => void;
   setPin: (pin: string) => void;
   skipPin: (sharedDevice: boolean) => void;
   lock: () => void;
@@ -61,9 +41,8 @@ export interface SessionActions {
 
 export interface MockSessionValue {
   step: SessionStep;
-  org?: Organization;
-  email?: string;
-  profile?: DoctorOnboardingProfile;
+  org?: MockOrganization;
+  doctor?: DoctorProfile;
   canLock: boolean;
   attemptsLeft: number;
   actions: SessionActions;
@@ -72,9 +51,9 @@ export interface MockSessionValue {
 const MAX_ATTEMPTS = 5;
 const INACTIVITY_MS = 5 * 60 * 1000;
 const DEVICE_KEY = "gg_doc_device";
-const SESSION_KEY = "gg_doc_session";
+const FLAGS_KEY = "gg_doc_session_flags";
 
-// MOCK ONLY — not a real hash. Real PIN handling is device-secure + rate-limited server-side.
+// MOCK device PIN hash — not secure; the real security boundary is the backend token.
 function hashPin(pin: string): string {
   let h = 0;
   for (let i = 0; i < pin.length; i++) h = (h * 31 + pin.charCodeAt(i)) | 0;
@@ -91,21 +70,20 @@ function readJSON(store: Storage, key: string): Record<string, unknown> {
 
 function loadState(): SessionState {
   const device = readJSON(localStorage, DEVICE_KEY);
-  const session = readJSON(sessionStorage, SESSION_KEY);
+  const flags = readJSON(sessionStorage, FLAGS_KEY);
+  const session = loadDoctorSession();
   return {
     orgId: device.orgId as string | undefined,
     pinHash: device.pinHash as string | undefined,
     sharedDevice: Boolean(device.sharedDevice),
-    signedIn: Boolean(session.signedIn),
-    email: session.email as string | undefined,
-    profile: device.profile as DoctorOnboardingProfile | undefined,
     pinSkipped: Boolean(device.pinSkipped),
-    locked: Boolean(session.locked),
-    attempts: Number(session.attempts) || 0,
+    doctor: session?.doctor,
+    locked: Boolean(flags.locked),
+    attempts: Number(flags.attempts) || 0,
   };
 }
 
-function persist(s: SessionState) {
+function persist(s: SessionState): void {
   try {
     localStorage.setItem(
       DEVICE_KEY,
@@ -113,28 +91,18 @@ function persist(s: SessionState) {
         orgId: s.orgId,
         pinHash: s.pinHash,
         sharedDevice: s.sharedDevice,
-        profile: s.profile,
         pinSkipped: s.pinSkipped,
       }),
     );
-    sessionStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({
-        signedIn: s.signedIn,
-        email: s.email,
-        locked: s.locked,
-        attempts: s.attempts,
-      }),
-    );
+    sessionStorage.setItem(FLAGS_KEY, JSON.stringify({ locked: s.locked, attempts: s.attempts }));
   } catch {
-    /* ignore storage failures in the mock */
+    /* ignore */
   }
 }
 
 function deriveStep(s: SessionState): SessionStep {
   if (!s.orgId) return "choose_org";
-  if (!s.signedIn) return "authenticate";
-  if (!s.profile) return "complete_profile";
+  if (!s.doctor) return "authenticate";
   if (s.locked && s.pinHash) return "locked";
   if (!s.pinHash && !s.pinSkipped && !s.sharedDevice) return "set_pin";
   return "ready";
@@ -157,26 +125,19 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
 
   const lock = useCallback(() => setState((prev) => ({ ...prev, locked: true })), []);
 
-  const signOut = useCallback(
-    () =>
-      setState((prev) => ({
-        // Full sign-out revokes the session; the device PIN stays paired for the next login's
-        // lock, but it never replaces a fresh full login. Org is remembered on this device.
-        ...prev,
-        signedIn: false,
-        email: undefined,
-        locked: false,
-        attempts: 0,
-      })),
-    [],
-  );
+  const signOut = useCallback(() => {
+    clearDoctorSession();
+    setState((prev) => ({ ...prev, doctor: undefined, locked: false, attempts: 0 }));
+  }, []);
 
   const actions = useMemo<SessionActions>(
     () => ({
       chooseOrg: (orgId) => update({ orgId }),
       resetOrg: () => update({ orgId: undefined }),
-      authenticate: (email) => update({ signedIn: true, email, locked: false, attempts: 0 }),
-      completeProfile: (profile) => update({ profile }),
+      authenticate: (doctor, token, expiresAt) => {
+        storeDoctorSession({ token, expiresAt, doctor });
+        update({ doctor, locked: false, attempts: 0 });
+      },
       setPin: (pin) => update({ pinHash: hashPin(pin), pinSkipped: false, locked: false }),
       skipPin: (sharedDevice) => update({ pinSkipped: true, sharedDevice }),
       lock,
@@ -189,14 +150,8 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
           }
           const attempts = prev.attempts + 1;
           if (attempts >= MAX_ATTEMPTS) {
-            // Too many tries → drop the session, force a full login.
-            return {
-              ...prev,
-              signedIn: false,
-              email: undefined,
-              locked: false,
-              attempts: 0,
-            };
+            clearDoctorSession();
+            return { ...prev, doctor: undefined, locked: false, attempts: 0 };
           }
           return { ...prev, attempts };
         });
@@ -207,9 +162,8 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
     [update, lock, signOut],
   );
 
-  const canLock = Boolean(state.pinHash) && state.signedIn;
+  const canLock = Boolean(state.pinHash) && Boolean(state.doctor);
 
-  // Inactivity auto-lock (only when a PIN exists to unlock with).
   useEffect(() => {
     if (!canLock) return;
     let timer = window.setTimeout(lock, INACTIVITY_MS);
@@ -230,8 +184,7 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
     return {
       step: deriveStep(state),
       org,
-      email: state.email,
-      profile: state.profile,
+      doctor: state.doctor,
       canLock,
       attemptsLeft: MAX_ATTEMPTS - state.attempts,
       actions,

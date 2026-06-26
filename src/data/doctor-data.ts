@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDoctorLogin, useGetPatientData } from "@doctor-portal/api-client-react";
-import type { DoctorMessage, PatientSnapshot } from "@doctor-portal/api-client-react";
+import {
+  useGetPatientData,
+  useLinkDoctorPatient,
+  useListDoctorLinkedPatients,
+} from "@doctor-portal/api-client-react";
+import type {
+  DoctorLinkedPatient,
+  DoctorLinkPatientResponse,
+  DoctorMessage,
+  PatientSnapshot,
+} from "@doctor-portal/api-client-react";
 import type {
   PatientDetail,
   ProposeOrderInput,
@@ -9,14 +18,10 @@ import type {
 } from "./contracts";
 import { USE_MOCK_DATA, mockMessages, mockOrganizations, mockProposeOrder, mockSendMessage } from "./mock";
 import type { MockOrganization } from "./mock";
-import { type LinkedPatient, addLinkedPatient, getLinkedPatients } from "./linked-patients";
-
 /**
- * Patient data comes from the live Glucose Guardian backend via the existing REST endpoints,
- * keyed by the app-generated Doctor Code (full-edit). The doctor's linked codes are stored on
- * the device for now; a Convex grant table is the eventual home (see the backend spec).
- *
- * Auth/onboarding and the organization directory stay mock in dev until Clerk + Convex land.
+ * Patient data comes from the live Glucose Guardian backend, authenticated with the doctor's
+ * Bearer token. Linked patients come from GET /api/doctor/me/patients; linking by Doctor Code
+ * goes through POST /api/doctor/me/patients/link. The organization directory stays mock.
  */
 
 // ---- Real patient data by Doctor Code ----
@@ -80,18 +85,29 @@ export function usePatientDetail(accessCode: string): QueryResult<PatientDetail>
 
 // ---- Linked patients (device-stored until a backend grant table exists) ----
 
-export function useDoctorPatients(): { data: LinkedPatient[]; refetch: () => void } {
-  const [version, setVersion] = useState(0);
-  const data = useMemo(() => getLinkedPatients(), [version]);
-  return { data, refetch: () => setVersion((v) => v + 1) };
+export function useDoctorPatients(): {
+  data: DoctorLinkedPatient[];
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
+  const res = useListDoctorLinkedPatients();
+  return {
+    data: res.data?.patients ?? [],
+    isLoading: res.isLoading,
+    error: (res.error as Error | null) ?? null,
+    refetch: () => {
+      void res.refetch();
+    },
+  };
 }
 
 export function useLinkPatient(): {
-  mutate: (code: string) => Promise<LinkedPatient>;
+  mutate: (code: string) => Promise<DoctorLinkPatientResponse>;
   isPending: boolean;
   error: Error | null;
 } {
-  const login = useDoctorLogin();
+  const link = useLinkDoctorPatient();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const mutate = useCallback(
@@ -99,26 +115,20 @@ export function useLinkPatient(): {
       setIsPending(true);
       setError(null);
       try {
-        const res = await login.mutateAsync({ data: { accessCode: code } });
-        if (!res.success) {
-          throw new Error("That code isn't valid. Check the Doctor Code in the patient's app.");
-        }
-        const entry: LinkedPatient = {
-          code: res.accessCode,
-          name: res.patientName ?? code,
-          hasData: res.hasData,
-        };
-        addLinkedPatient(entry);
-        return entry;
+        // Auto-links by the patient's Doctor Code — the code itself is the consent.
+        return await link.mutateAsync({ data: { accessCode: code } });
       } catch (e) {
-        const err = e instanceof Error ? e : new Error("Could not link patient.");
+        const err =
+          e instanceof Error
+            ? new Error("That code isn't valid, or your session expired. Check the Doctor Code.")
+            : new Error("Could not link patient.");
         setError(err);
         throw err;
       } finally {
         setIsPending(false);
       }
     },
-    [login],
+    [link],
   );
   return { mutate, isPending, error };
 }

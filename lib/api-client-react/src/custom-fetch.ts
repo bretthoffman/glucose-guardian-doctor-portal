@@ -6,6 +6,12 @@ export type ErrorType<T = unknown> = ApiError<T>;
 
 export type BodyType<T> = T;
 
+// Doctor session Bearer token, injected on every request when present.
+let doctorAuthToken: string | null = null;
+export function setDoctorAuthToken(token: string | null): void {
+  doctorAuthToken = token;
+}
+
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
@@ -324,6 +330,10 @@ export async function customFetch<T = unknown>(
 
   if (responseType === "json" && !headers.has("accept")) {
     headers.set("accept", DEFAULT_JSON_ACCEPT);
+  }
+
+  if (doctorAuthToken && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${doctorAuthToken}`);
   }
 
   const resolvedInput = resolveRequestInput(input);

@@ -1,51 +1,92 @@
 import { useState } from "react";
 import { ArrowRight, Building2, Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { useDoctorAuthLogin, useDoctorAuthRegister } from "@doctor-portal/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { mockOrganizations } from "@/data/mock";
 import { useDoctorSession } from "../mock-session";
+import { hashPassword } from "../password";
 import { AuthShell } from "./auth-shell";
 
 export function CredentialsStep() {
   const { org, actions } = useDoctorSession();
-  const full = mockOrganizations().find((o) => o.id === org?.id);
-  const domains = full?.allowedDomains ?? [];
+  const register = useDoctorAuthRegister();
+  const login = useDoctorAuthLogin();
   const [mode, setMode] = useState<"create" | "signin">("create");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     const at = email.trim().toLowerCase();
-    const domainOk = domains.some((d) => at.endsWith(`@${d}`));
-    if (!at || !domainOk) {
-      setErr(
-        `Use your ${org?.name ?? "organization"} work email (e.g. name@${domains[0] ?? "org.org"}).`,
-      );
+    if (!at || !at.includes("@")) {
+      setErr("Enter your work email.");
       return;
     }
     if (password.length < 6) {
-      setErr("Enter a password (6+ characters).");
+      setErr("Password must be at least 6 characters.");
       return;
     }
-    if (mode === "create" && password !== confirm) {
-      setErr("Passwords don't match.");
-      return;
+    if (mode === "create") {
+      if (!name.trim()) {
+        setErr("Enter your name.");
+        return;
+      }
+      if (password !== confirm) {
+        setErr("Passwords don't match.");
+        return;
+      }
     }
-    actions.authenticate(at);
+
+    const passwordHash = hashPassword(password);
+    setSubmitting(true);
+    try {
+      if (mode === "create") {
+        await register.mutateAsync({
+          data: { email: at, passwordHash, displayName: name.trim(), institution: org?.name },
+        });
+      }
+      const res = await login.mutateAsync({ data: { email: at, passwordHash } });
+      actions.authenticate(res.doctor, res.token, res.expiresAt);
+    } catch {
+      setErr(
+        mode === "create"
+          ? "Couldn't create your account — that email may already be registered."
+          : "Invalid email or password.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const busy = submitting || register.isPending || login.isPending;
 
   return (
     <AuthShell
       title={mode === "create" ? "Create your account" : "Sign in"}
-      subtitle={org ? `${org.name} · work email required` : undefined}
+      subtitle={org ? `${org.name} · work email` : undefined}
     >
       <form onSubmit={submit} className="space-y-4">
+        {mode === "create" && (
+          <div>
+            <Label htmlFor="name">Full name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Dr. Alex Rivera"
+              className="mt-1.5"
+              autoComplete="name"
+            />
+          </div>
+        )}
+
         <div>
           <Label htmlFor="email">Work email</Label>
           <Input
@@ -53,7 +94,7 @@ export function CredentialsStep() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={`name@${domains[0] ?? "org.org"}`}
+            placeholder="name@hospital.org"
             className="mt-1.5"
             autoComplete="email"
           />
@@ -104,9 +145,9 @@ export function CredentialsStep() {
           </div>
         )}
 
-        <Button type="submit" className="w-full h-12">
-          {mode === "create" ? "Create account" : "Sign in"}
-          <ArrowRight className="w-4 h-4 ml-2" />
+        <Button type="submit" className="w-full h-12" disabled={busy}>
+          {busy ? "Please wait…" : mode === "create" ? "Create account" : "Sign in"}
+          {!busy && <ArrowRight className="w-4 h-4 ml-2" />}
         </Button>
       </form>
 
@@ -127,10 +168,6 @@ export function CredentialsStep() {
           <Building2 className="w-3.5 h-3.5" /> Change org
         </button>
       </div>
-
-      <p className="text-xs text-muted-foreground mt-4 text-center">
-        In production this is Clerk (work email + MFA). The mock skips real verification.
-      </p>
     </AuthShell>
   );
 }

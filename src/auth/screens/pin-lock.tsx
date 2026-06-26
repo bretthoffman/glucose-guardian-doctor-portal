@@ -6,7 +6,7 @@ import { useDoctorSession } from "../mock-session";
 import { AuthShell } from "./auth-shell";
 
 export function PinLock() {
-  const { email, attemptsLeft, actions } = useDoctorSession();
+  const { doctor, attemptsLeft, actions } = useDoctorSession();
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -20,7 +20,7 @@ export function PinLock() {
   }
 
   return (
-    <AuthShell title="Locked" subtitle={email}>
+    <AuthShell title="Locked" subtitle={doctor?.email}>
       <form onSubmit={submit} className="space-y-4">
         <div className="flex justify-center">
           <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center">

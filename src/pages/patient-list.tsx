@@ -9,8 +9,7 @@ import { formatTime, getGlucoseColor, calculateA1C } from "@/lib/utils";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { useDoctorPatients, useLinkPatient, usePatientSnapshot } from "@/data/doctor-data";
 import type { PatientFlag } from "@/data/contracts";
-import type { LinkedPatient } from "@/data/linked-patients";
-import type { PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { DoctorLinkedPatient, PatientSnapshot } from "@doctor-portal/api-client-react";
 
 const FLAG_META: Record<PatientFlag, { label: string; className: string }> = {
   urgent_low: { label: "Urgent low", className: "bg-destructive/15 text-destructive border-destructive/30" },
@@ -47,13 +46,14 @@ function flagsFromSnapshot(s: PatientSnapshot): PatientFlag[] {
   return flags;
 }
 
-function PatientCard({ entry, onOpen }: { entry: LinkedPatient; onOpen: () => void }) {
-  const { snapshot, isLoading, error } = usePatientSnapshot(entry.code);
+function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: () => void }) {
+  const { snapshot, isLoading, error } = usePatientSnapshot(entry.accessCode);
   const profile = snapshot?.profile;
   const latest = snapshot?.glucoseReadings?.[0];
   const flags = snapshot ? flagsFromSnapshot(snapshot) : [];
   const a1c = snapshot?.glucoseReadings?.length ? calculateA1C(snapshot.glucoseReadings) : undefined;
   const dtype = diabetesLabel(profile?.diabetesType);
+  const name = profile?.childName ?? entry.displayName ?? entry.accessCode;
   const accent =
     flags.includes("urgent_low") || flags.includes("urgent_high")
       ? "border-l-4 border-l-destructive"
@@ -67,13 +67,13 @@ function PatientCard({ entry, onOpen }: { entry: LinkedPatient; onOpen: () => vo
         <CardContent className="p-5 flex items-center gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-foreground">{profile?.childName ?? entry.name}</span>
+              <span className="font-medium text-foreground">{name}</span>
               {dtype && (
                 <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
                   {dtype}
                 </span>
               )}
-              <span className="text-xs font-mono text-muted-foreground">{entry.code}</span>
+              <span className="text-xs font-mono text-muted-foreground">{entry.accessCode}</span>
               {flags.map((f) => (
                 <FlagChip key={f} flag={f} />
               ))}
@@ -82,7 +82,7 @@ function PatientCard({ entry, onOpen }: { entry: LinkedPatient; onOpen: () => vo
               {isLoading
                 ? "Loading…"
                 : error
-                  ? "Data locked — backend requires doctor sign-in"
+                  ? "Couldn't load — your session may have expired"
                   : latest
                     ? `Last reading ${formatTime(latest.timestamp)}`
                     : "Pending sync — no data yet"}
@@ -118,7 +118,7 @@ export function PatientList() {
 
   const q = query.trim().toLowerCase();
   const visible = patients.filter(
-    (p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q),
+    (p) => (p.displayName ?? "").toLowerCase().includes(q) || p.accessCode.toLowerCase().includes(q),
   );
 
   async function handleLink(e: React.FormEvent) {
@@ -127,7 +127,7 @@ export function PatientList() {
     try {
       const linked = await linkPatient(code.trim().toUpperCase());
       refetch();
-      setLinkMsg(`Linked ${linked.name} — now in your list below.`);
+      setLinkMsg(`Linked ${linked.displayName ?? linked.accessCode} — now in your list below.`);
       setCode("");
     } catch (err) {
       setLinkMsg(err instanceof Error ? err.message : "Could not link patient.");
@@ -155,7 +155,7 @@ export function PatientList() {
             {doctor && (
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-foreground leading-tight">{doctor.displayName}</p>
-                <p className="text-xs text-muted-foreground">{doctor.specialty}</p>
+                <p className="text-xs text-muted-foreground">{doctor.email}</p>
               </div>
             )}
             {canLock && (
@@ -227,9 +227,9 @@ export function PatientList() {
           ) : (
             visible.map((entry) => (
               <PatientCard
-                key={entry.code}
+                key={entry.accessCode}
                 entry={entry}
-                onOpen={() => setLocation(`/patient/${entry.code}/overview`)}
+                onOpen={() => setLocation(`/patient/${entry.accessCode}/overview`)}
               />
             ))
           )}

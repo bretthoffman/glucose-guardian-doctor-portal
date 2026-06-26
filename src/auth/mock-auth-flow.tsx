@@ -2,14 +2,12 @@ import type { ReactNode } from "react";
 import { useDoctorSession } from "./mock-session";
 import { OrgPicker } from "./screens/org-picker";
 import { CredentialsStep } from "./screens/credentials-step";
-import { ProfileSetup } from "./screens/profile-setup";
 import { SetPinStep } from "./screens/set-pin-step";
 import { PinLock } from "./screens/pin-lock";
 
 /**
- * DEV-only controller for the redesigned first-run flow. Renders the right step, or the
- * authorized app (`children`) once the session is ready and unlocked. In production this is
- * replaced by Clerk + Convex; the individual step screens are reused there.
+ * Controller for the doctor sign-in flow: organization → real account sign-in → optional PIN
+ * lock, then the authorized app (`children`).
  */
 export function MockAuthFlow({ children }: { children: ReactNode }) {
   const { step } = useDoctorSession();
@@ -18,8 +16,6 @@ export function MockAuthFlow({ children }: { children: ReactNode }) {
       return <OrgPicker />;
     case "authenticate":
       return <CredentialsStep />;
-    case "complete_profile":
-      return <ProfileSetup />;
     case "set_pin":
       return <SetPinStep />;
     case "locked":
