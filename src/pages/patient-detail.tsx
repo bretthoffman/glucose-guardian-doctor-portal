@@ -10,10 +10,16 @@ import {
   Activity,
   ChevronsUpDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PatientHeader } from "@/components/PatientHeader";
+import { computeMetrics, STATUS_META, formatAge } from "@/lib/glucose-metrics";
 import { OverviewPanel } from "@/components/panels/OverviewPanel";
 import { ChartPanel } from "@/components/panels/ChartPanel";
 import { InsulinPanel } from "@/components/panels/InsulinPanel";
@@ -48,6 +54,23 @@ function typeLabel(t?: string): string {
   return t === "type1" ? "Type 1" : t === "type2" ? "Type 2" : "Other";
 }
 
+function TrendArrow({ trend, className = "w-4 h-4" }: { trend: string; className?: string }) {
+  switch (trend) {
+    case "DoubleUp":
+    case "SingleUp":
+      return <ArrowUp className={className} />;
+    case "FortyFiveUp":
+      return <ArrowUpRight className={className} />;
+    case "FortyFiveDown":
+      return <ArrowDownRight className={className} />;
+    case "SingleDown":
+    case "DoubleDown":
+      return <ArrowDown className={className} />;
+    default:
+      return <ArrowRight className={className} />;
+  }
+}
+
 export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: string }) {
   const [, setLocation] = useLocation();
   const { signOut, lock, canLock } = useSession();
@@ -60,6 +83,8 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   if (!detail) return <NotLinked accessCode={accessCode} onBack={() => setLocation("/")} />;
 
   const name = detail.snapshot.profile.childName;
+  const gm = computeMetrics(detail.snapshot);
+  const gstatus = gm.status ? STATUS_META[gm.status] : null;
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -94,6 +119,40 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
             </div>
             <ChevronsUpDown className="w-4 h-4 text-muted-foreground shrink-0" />
           </button>
+
+          <div
+            className={`mt-2 rounded-xl border px-3 py-2 ${
+              gm.latest && !gm.stale && gstatus ? gstatus.chip : "border-border bg-secondary/30"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {gm.stale ? "Last Glucose" : "Current Glucose"}
+              </p>
+              {gm.latest && gm.minutesSinceLatest != null && (
+                <span className="text-[10px] text-muted-foreground">
+                  {formatAge(gm.minutesSinceLatest)}
+                </span>
+              )}
+            </div>
+            {gm.latest ? (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  className={`text-xl font-display font-bold ${
+                    gm.stale ? "text-muted-foreground" : (gstatus?.text ?? "text-foreground")
+                  }`}
+                >
+                  {gm.latest.value}
+                </span>
+                <span className="text-[11px] text-muted-foreground">mg/dL</span>
+                <span className={`ml-auto ${gm.stale ? "text-muted-foreground" : gstatus?.text}`}>
+                  <TrendArrow trend={gm.latest.trend} className="w-4 h-4" />
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-0.5">No CGM data</p>
+            )}
+          </div>
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
