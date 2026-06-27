@@ -25,7 +25,7 @@ import { usePatientDetail } from "@/data/doctor-data";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "chart", label: "CGM Chart", icon: LineChart },
+  { id: "chart", label: "CGM / A1C Trends", icon: LineChart },
   { id: "insulin", label: "Insulin Log", icon: Syringe },
   { id: "orders", label: "Treatment Settings", icon: SlidersHorizontal },
   { id: "messages", label: "Messages", icon: MessageSquare },
