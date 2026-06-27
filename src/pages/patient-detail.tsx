@@ -147,14 +147,16 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-background">
-        <div className="max-w-7xl mx-auto p-5 lg:p-6 space-y-5">
+        <div className="max-w-[1600px] mx-auto p-5 lg:p-6 space-y-5">
           <PatientHeader snapshot={detail.snapshot} onRefresh={refetch} refreshing={isFetching} />
           <div key={current} className="animate-fade-in">
             {current === "overview" && (
               <OverviewPanel data={detail.snapshot} accessCode={detail.accessCode} />
             )}
             {current === "chart" && <ChartPanel data={detail.snapshot} />}
-            {current === "insulin" && <InsulinPanel data={detail.snapshot} />}
+            {current === "insulin" && (
+              <InsulinPanel data={detail.snapshot} accessCode={detail.accessCode} />
+            )}
             {current === "orders" && <TherapyOrdersPanel detail={detail} />}
             {current === "messages" && (
               <MessagesPanel accessCode={detail.accessCode} patientName={name} />
