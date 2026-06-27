@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import {
   ChevronLeft,
@@ -32,7 +32,11 @@ import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
 import {
   buildDayReview,
-  listDays,
+  buildDayChips,
+  shiftDayKey,
+  dayKeyBounds,
+  dataDayKeySet,
+  localDayKey,
   defaultDayKey,
   SLOT_LABEL,
   type DayEvent,
@@ -69,6 +73,14 @@ function clock(timestamp: string): string {
 
 function ratioText(value?: number): string {
   return value != null ? `1:${value}` : "—";
+}
+
+const minKey = (...keys: string[]) => keys.reduce((a, b) => (a < b ? a : b));
+const maxKey = (...keys: string[]) => keys.reduce((a, b) => (a > b ? a : b));
+
+function startOfMonthDate(key: string): Date {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1);
 }
 
 function exportDayCsv(review: DayReview, patientName: string) {
@@ -223,22 +235,74 @@ function MealCard({ meal, review }: { meal: DayMeal; review: DayReview }) {
 
 export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; accessCode: string }) {
   const [, setLocation] = useLocation();
-  const chips = useMemo(() => listDays(data, 7), [data]);
+  const bounds = useMemo(() => dayKeyBounds(data), [data]);
+  const dataKeys = useMemo(() => dataDayKeySet(data), [data]);
+  const todayKey = localDayKey(new Date());
+
   const [selectedKey, setSelectedKey] = useState(() => defaultDayKey(data));
+  const [winStart, setWinStart] = useState(() => {
+    const sel = defaultDayKey(data);
+    const end = maxKey(bounds.latest, todayKey, sel);
+    return minKey(bounds.earliest, shiftDayKey(end, -13), sel);
+  });
+  const [winEnd, setWinEnd] = useState(() => maxKey(bounds.latest, todayKey, defaultDayKey(data)));
   const [windowHours, setWindowHours] = useState(24);
   const [notesByDay, setNotesByDay] = useState<Record<string, string[]>>({});
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(() => startOfMonthDate(selectedKey));
 
-  const effectiveKey = chips.some((c) => c.key === selectedKey)
-    ? selectedKey
-    : (chips[chips.length - 1]?.key ?? selectedKey);
-  const idx = chips.findIndex((c) => c.key === effectiveKey);
-  const selectedChip = chips[idx];
+  const stripRef = useRef<HTMLDivElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, startX: 0, startScroll: 0, moved: false });
 
-  const review = useMemo(() => buildDayReview(data, effectiveKey), [data, effectiveKey]);
+  const chips = useMemo(() => buildDayChips(data, winStart, winEnd), [data, winStart, winEnd]);
+  const review = useMemo(() => buildDayReview(data, selectedKey), [data, selectedKey]);
   const s = review.summary;
-  const notes = notesByDay[effectiveKey] ?? [];
+  const notes = notesByDay[selectedKey] ?? [];
+
+  const ensureWindow = (key: string) => {
+    setWinStart((cur) => (key < cur ? key : cur));
+    setWinEnd((cur) => (key > cur ? key : cur));
+  };
+  const selectKey = (key: string) => {
+    setSelectedKey(key);
+    ensureWindow(key);
+    setPickerOpen(false);
+  };
+  const stepDay = (delta: number) => selectKey(shiftDayKey(selectedKey, delta));
+
+  // Keep the selected chip scrolled into view as the day changes.
+  useEffect(() => {
+    const el = stripRef.current?.querySelector<HTMLElement>(`[data-daykey="${selectedKey}"]`);
+    el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [selectedKey, winStart, winEnd]);
+
+  // Close the date picker on an outside click.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (dateRef.current && !dateRef.current.contains(e.target as Node)) setPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [pickerOpen]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const el = stripRef.current;
+    if (!el) return;
+    drag.current = { active: true, startX: e.clientX, startScroll: el.scrollLeft, moved: false };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current.active || !stripRef.current) return;
+    const dx = e.clientX - drag.current.startX;
+    if (Math.abs(dx) > 4) drag.current.moved = true;
+    stripRef.current.scrollLeft = drag.current.startScroll - dx;
+  };
+  const endDrag = () => {
+    drag.current.active = false;
+  };
 
   const dayLabel = review.date.toLocaleDateString(undefined, {
     weekday: "long",
@@ -246,6 +310,8 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
     day: "numeric",
     year: "numeric",
   });
+  const shortLabel = review.date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const weekdayLong = review.date.toLocaleDateString(undefined, { weekday: "long" });
 
   const domain = useMemo<[number, number]>(() => {
     if (windowHours >= 24) return [review.dayStartMs, review.dayEndMs];
@@ -262,9 +328,13 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
     setComposerOpen(true);
     setTimeout(() => document.getElementById("clinical-note-input")?.focus(), 0);
   };
+  const openPicker = () => {
+    setPickerMonth(startOfMonthDate(selectedKey));
+    setPickerOpen((o) => !o);
+  };
   const saveNote = () => {
     if (!draft.trim()) return;
-    setNotesByDay((prev) => ({ ...prev, [effectiveKey]: [...(prev[effectiveKey] ?? []), draft.trim()] }));
+    setNotesByDay((prev) => ({ ...prev, [selectedKey]: [...(prev[selectedKey] ?? []), draft.trim()] }));
     setDraft("");
     setComposerOpen(false);
   };
@@ -276,39 +346,65 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
         {/* Calendar strip */}
         <div className="bg-card border border-border rounded-2xl p-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => idx > 0 && setSelectedKey(chips[idx - 1].key)}
-                disabled={idx <= 0}
-                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <div className="text-center min-w-[120px]">
-                <p className="text-sm font-medium text-foreground flex items-center justify-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                  {selectedChip?.label}, {review.date.getFullYear()}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {review.date.toLocaleDateString(undefined, { weekday: "long" })}
-                </p>
+            <div className="relative shrink-0" ref={dateRef}>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => stepDay(-1)}
+                  aria-label="Previous day"
+                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={openPicker}
+                  className="text-center min-w-[132px] rounded-lg px-2 py-1 hover:bg-secondary transition-colors"
+                >
+                  <p className="text-sm font-medium text-foreground flex items-center justify-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                    {shortLabel}, {review.date.getFullYear()}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{weekdayLong}</p>
+                </button>
+                <button
+                  onClick={() => stepDay(1)}
+                  aria-label="Next day"
+                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={() => idx < chips.length - 1 && setSelectedKey(chips[idx + 1].key)}
-                disabled={idx >= chips.length - 1}
-                className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40 transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              {pickerOpen && (
+                <MiniCalendar
+                  month={pickerMonth}
+                  onMonth={setPickerMonth}
+                  value={selectedKey}
+                  dataKeys={dataKeys}
+                  onPick={selectKey}
+                />
+              )}
             </div>
 
-            <div className="flex items-center gap-2 flex-1 overflow-x-auto min-w-0">
+            <div
+              ref={stripRef}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={endDrag}
+              onPointerLeave={endDrag}
+              className="flex items-center gap-2 flex-1 overflow-x-auto min-w-0 cursor-grab active:cursor-grabbing select-none"
+            >
               {chips.map((c) => {
-                const active = c.key === effectiveKey;
+                const active = c.key === selectedKey;
                 return (
                   <button
                     key={c.key}
-                    onClick={() => setSelectedKey(c.key)}
+                    data-daykey={c.key}
+                    onClick={() => {
+                      if (drag.current.moved) {
+                        drag.current.moved = false;
+                        return;
+                      }
+                      selectKey(c.key);
+                    }}
                     className={`shrink-0 w-[88px] rounded-xl border px-2.5 py-2 text-left transition-colors ${
                       active
                         ? "border-primary bg-primary/10 ring-1 ring-primary/40"
@@ -748,5 +844,86 @@ function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
       </td>
       <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">{e.note || "–"}</td>
     </tr>
+  );
+}
+
+function MiniCalendar({
+  month,
+  onMonth,
+  value,
+  dataKeys,
+  onPick,
+}: {
+  month: Date;
+  onMonth: (d: Date) => void;
+  value: string;
+  dataKeys: Set<string>;
+  onPick: (key: string) => void;
+}) {
+  const y = month.getFullYear();
+  const m = month.getMonth();
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const weekdays = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+  return (
+    <div className="absolute top-full left-0 mt-2 z-30 w-64 bg-card border border-border rounded-xl shadow-2xl p-3">
+      <div className="flex items-center justify-between mb-2">
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={() => onMonth(new Date(y, m - 1, 1))}
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-sm font-medium text-foreground">
+          {month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+        </span>
+        <button
+          type="button"
+          aria-label="Next month"
+          onClick={() => onMonth(new Date(y, m + 1, 1))}
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {weekdays.map((d) => (
+          <span key={d} className="text-[10px] text-center text-muted-foreground">
+            {d}
+          </span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (d == null) return <span key={i} />;
+          const key = localDayKey(new Date(y, m, d));
+          const selected = key === value;
+          const hasData = dataKeys.has(key);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onPick(key)}
+              className={`relative h-8 rounded-lg text-sm flex items-center justify-center transition-colors ${
+                selected
+                  ? "bg-primary text-primary-foreground font-semibold"
+                  : "text-foreground hover:bg-secondary"
+              }`}
+            >
+              {d}
+              {hasData && !selected && (
+                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
