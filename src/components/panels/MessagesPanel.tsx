@@ -41,7 +41,7 @@ export function MessagesPanel({ accessCode, patientName }: { accessCode: string,
   };
 
   return (
-    <Card className="h-[calc(100vh-140px)] flex flex-col border-border overflow-hidden">
+    <Card className="h-[calc(100vh-230px)] min-h-[440px] flex flex-col border-border rounded-2xl overflow-hidden">
       {/* Chat Header */}
       <div className="bg-secondary/50 border-b border-border p-4 flex items-center justify-between">
         <div>

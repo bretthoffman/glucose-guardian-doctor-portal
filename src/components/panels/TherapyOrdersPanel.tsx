@@ -172,6 +172,13 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
             <CardTitle>Propose a change</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 mb-5 flex items-start gap-2 text-amber-600">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="text-xs">
+                Proposed changes are not applied automatically. The caregiver must confirm them in
+                the Glucose Guardian app before they affect dosing.
+              </p>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field

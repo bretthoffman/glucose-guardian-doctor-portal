@@ -1,31 +1,27 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Activity, LogOut, ChevronRight, Building2, Lock, Search } from "lucide-react";
+import {
+  Activity,
+  LogOut,
+  ChevronRight,
+  Building2,
+  Lock,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowRight,
+} from "lucide-react";
 import { useSession } from "@/auth/use-session";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatTime, getGlucoseColor, calculateA1C } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
+import { computeMetrics, STATUS_META, type GlucoseStatus } from "@/lib/glucose-metrics";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { useDoctorPatients, useLinkPatient, usePatientSnapshot } from "@/data/doctor-data";
-import type { PatientFlag } from "@/data/contracts";
-import type { DoctorLinkedPatient, PatientSnapshot } from "@doctor-portal/api-client-react";
-
-const FLAG_META: Record<PatientFlag, { label: string; className: string }> = {
-  urgent_low: { label: "Urgent low", className: "bg-destructive/15 text-destructive border-destructive/30" },
-  low: { label: "Low", className: "bg-orange-500/15 text-orange-600 border-orange-500/30" },
-  high: { label: "High", className: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
-  urgent_high: { label: "Urgent high", className: "bg-destructive/15 text-destructive border-destructive/30" },
-  no_recent_data: { label: "No recent data", className: "bg-secondary text-muted-foreground border-border" },
-  pending_order: { label: "Order pending", className: "bg-primary/15 text-primary border-primary/30" },
-};
-
-function FlagChip({ flag }: { flag: PatientFlag }) {
-  const meta = FLAG_META[flag];
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${meta.className}`}>{meta.label}</span>
-  );
-}
+import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
   if (t === "type1") return "Type 1";
@@ -33,72 +29,113 @@ function diabetesLabel(t?: string): string | undefined {
   return t ? "Other" : undefined;
 }
 
-function flagsFromSnapshot(s: PatientSnapshot): PatientFlag[] {
-  const latest = s.glucoseReadings?.[0];
-  if (!latest) return ["no_recent_data"];
-  const v = latest.value;
-  const a = s.alertPreferences;
-  const flags: PatientFlag[] = [];
-  if (a?.urgentHighThreshold && v >= a.urgentHighThreshold) flags.push("urgent_high");
-  else if (a?.highThreshold && v > a.highThreshold) flags.push("high");
-  if (a?.urgentLowThreshold && v <= a.urgentLowThreshold) flags.push("urgent_low");
-  else if (a?.lowThreshold && v < a.lowThreshold) flags.push("low");
-  return flags;
+function initials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?"
+  );
+}
+
+const ACCENT: Record<GlucoseStatus, string> = {
+  urgentHigh: "border-l-destructive",
+  urgentLow: "border-l-destructive",
+  high: "border-l-warning",
+  low: "border-l-orange-500",
+  target: "border-l-success",
+};
+
+// Triage priority — most urgent floats to the top via CSS order.
+const ORDER: Record<GlucoseStatus, number> = {
+  urgentHigh: 0,
+  urgentLow: 0,
+  high: 1,
+  low: 1,
+  target: 2,
+};
+
+function TrendArrow({ trend, className = "w-4 h-4" }: { trend: string; className?: string }) {
+  switch (trend) {
+    case "DoubleUp":
+    case "SingleUp":
+      return <ArrowUp className={className} />;
+    case "FortyFiveUp":
+      return <ArrowUpRight className={className} />;
+    case "FortyFiveDown":
+      return <ArrowDownRight className={className} />;
+    case "SingleDown":
+    case "DoubleDown":
+      return <ArrowDown className={className} />;
+    default:
+      return <ArrowRight className={className} />;
+  }
 }
 
 function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: () => void }) {
   const { snapshot, isLoading, error } = usePatientSnapshot(entry.accessCode);
+  const m = snapshot ? computeMetrics(snapshot) : null;
   const profile = snapshot?.profile;
-  const latest = snapshot?.glucoseReadings?.[0];
-  const flags = snapshot ? flagsFromSnapshot(snapshot) : [];
-  const a1c = snapshot?.glucoseReadings?.length ? calculateA1C(snapshot.glucoseReadings) : undefined;
-  const dtype = diabetesLabel(profile?.diabetesType);
   const name = profile?.childName ?? entry.displayName ?? entry.accessCode;
-  const accent =
-    flags.includes("urgent_low") || flags.includes("urgent_high")
-      ? "border-l-4 border-l-destructive"
-      : flags.includes("high") || flags.includes("low")
-        ? "border-l-4 border-l-amber-500"
-        : "";
+  const dtype = diabetesLabel(profile?.diabetesType);
+  const status = m?.status ?? null;
+  const meta = status ? STATUS_META[status] : null;
+  const order = status ? ORDER[status] : isLoading ? 4 : 3;
+  const accent = status ? ACCENT[status] : "border-l-border";
 
   return (
-    <button onClick={onOpen} className="w-full text-left">
-      <Card className={`hover:border-primary/40 transition-colors ${accent}`}>
-        <CardContent className="p-5 flex items-center gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-foreground">{name}</span>
-              {dtype && (
-                <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-                  {dtype}
-                </span>
-              )}
-              <span className="text-xs font-mono text-muted-foreground">{entry.accessCode}</span>
-              {flags.map((f) => (
-                <FlagChip key={f} flag={f} />
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {isLoading
-                ? "Loading…"
-                : error
-                  ? "Couldn't load — your session may have expired"
-                  : latest
-                    ? `Last reading ${formatTime(latest.timestamp)}`
-                    : "Pending sync — no data yet"}
-              {a1c != null && ` · A1C ~${a1c}%`}
-            </p>
+    <button onClick={onOpen} className="w-full text-left" style={{ order }}>
+      <div
+        className={`bg-card border border-border border-l-4 ${accent} rounded-2xl p-4 flex items-center gap-4 hover:border-primary/40 transition-colors`}
+      >
+        <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-display font-bold shrink-0">
+          {initials(name)}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-foreground">{name}</span>
+            {dtype && (
+              <span className="text-xs px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                {dtype}
+              </span>
+            )}
+            <span className="text-xs font-mono text-muted-foreground">{entry.accessCode}</span>
+            {meta && (
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${meta.chip}`}>
+                {meta.label}
+              </span>
+            )}
           </div>
-          {latest && (
-            <span
-              className={`text-sm font-semibold px-2.5 py-0.5 rounded-full ${getGlucoseColor(latest.value)}`}
-            >
-              {latest.value}
-            </span>
-          )}
-          <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-        </CardContent>
-      </Card>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isLoading
+              ? "Loading…"
+              : error
+                ? "Couldn't load — your session may have expired"
+                : m?.latest
+                  ? `Last reading ${formatTime(m.latest.timestamp)}`
+                  : "Pending sync — no data yet"}
+            {m?.a1c && ` · A1C ~${m.a1c}%`}
+            {m && m.count > 0 && ` · TIR ${m.tir}%`}
+          </p>
+        </div>
+
+        {m?.latest ? (
+          <div className="text-right shrink-0">
+            <div className={`flex items-center justify-end gap-1 ${meta?.text}`}>
+              <TrendArrow trend={m.latest.trend} className="w-4 h-4" />
+              <span className="text-2xl font-display font-bold">{m.latest.value}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">mg/dL</p>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground shrink-0">No data</span>
+        )}
+        <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+      </div>
     </button>
   );
 }
@@ -143,7 +180,7 @@ export function PatientList() {
               <Activity className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <p className="font-display font-bold text-foreground leading-tight">Gluco Guardian</p>
+              <p className="font-display font-bold text-foreground leading-tight">GlucoGuardian</p>
               {org && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Building2 className="w-3 h-3" /> {org.name}
@@ -154,7 +191,9 @@ export function PatientList() {
           <div className="flex items-center gap-4">
             {doctor && (
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-foreground leading-tight">{doctor.displayName}</p>
+                <p className="text-sm font-medium text-foreground leading-tight">
+                  {doctor.displayName}
+                </p>
                 <p className="text-xs text-muted-foreground">{doctor.email}</p>
               </div>
             )}
@@ -176,7 +215,7 @@ export function PatientList() {
           <p className="text-muted-foreground text-sm">
             {patients.length === 0
               ? "Link a patient with the Doctor Code from their Glucose Guardian app."
-              : `${patients.length} linked patient${patients.length === 1 ? "" : "s"}.`}
+              : `${patients.length} linked patient${patients.length === 1 ? "" : "s"} · sorted by urgency.`}
           </p>
         </section>
 
@@ -215,7 +254,7 @@ export function PatientList() {
           </div>
         )}
 
-        <section className="space-y-3">
+        <section className="flex flex-col gap-3">
           {patients.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl">
               No linked patients yet. Enter a Doctor Code above to add one.
