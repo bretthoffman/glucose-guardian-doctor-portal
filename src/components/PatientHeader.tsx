@@ -1,7 +1,7 @@
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Clock, RefreshCw } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatDate, formatTime } from "@/lib/utils";
-import { computeMetrics, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
+import { computeMetrics, formatAge, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
 
 function initials(name: string): string {
   return (
@@ -31,7 +31,7 @@ function MetaStat({ label, value }: { label: string; value: string }) {
 export function PatientHeader({ snapshot }: { snapshot: PatientSnapshot }) {
   const p = snapshot.profile;
   const m = computeMetrics(snapshot);
-  const urgent = m.status === "urgentHigh" || m.status === "urgentLow";
+  const urgent = !m.stale && (m.status === "urgentHigh" || m.status === "urgentLow");
   const meta = m.status ? STATUS_META[m.status] : null;
 
   return (
@@ -56,14 +56,29 @@ export function PatientHeader({ snapshot }: { snapshot: PatientSnapshot }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-success" />
-          Last synced {formatTime(snapshot.syncedAt)}
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${m.stale ? "bg-amber-500" : "bg-success"}`}
+          />
+          {m.latest && m.minutesSinceLatest != null
+            ? `Updated ${formatAge(m.minutesSinceLatest)}`
+            : "No CGM data"}
           <RefreshCw className="w-3.5 h-3.5 ml-1 opacity-70" />
         </div>
       </div>
 
       <div className="flex items-stretch gap-4 mt-4 flex-wrap">
-        {urgent && meta && (
+        {m.stale && m.latest && m.minutesSinceLatest != null ? (
+          <div className="flex-1 min-w-[240px] rounded-xl border px-4 py-3 flex items-center gap-3 bg-amber-500/10 text-amber-600 border-amber-500/30">
+            <Clock className="w-5 h-5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-wide">Data may be outdated</p>
+              <p className="text-xs opacity-90">
+                Last CGM reading {formatAge(m.minutesSinceLatest)} ({formatTime(m.latest.timestamp)})
+                · may not reflect current glucose
+              </p>
+            </div>
+          </div>
+        ) : urgent && meta ? (
           <div
             className={`flex-1 min-w-[240px] rounded-xl border px-4 py-3 flex items-center gap-3 ${meta.chip}`}
           >
@@ -76,7 +91,7 @@ export function PatientHeader({ snapshot }: { snapshot: PatientSnapshot }) {
               </p>
             </div>
           </div>
-        )}
+        ) : null}
         <div className="flex items-center gap-6 rounded-xl border border-border bg-secondary/30 px-4 py-3 ml-auto flex-wrap">
           <MetaStat
             label="Last CGM Reading"

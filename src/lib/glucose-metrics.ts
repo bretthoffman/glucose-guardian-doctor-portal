@@ -4,6 +4,21 @@ import { calculateA1C } from "./utils";
 const ts = (x: { timestamp: string }) => new Date(x.timestamp).getTime();
 const byTimeAsc = (a: { timestamp: string }, b: { timestamp: string }) => ts(a) - ts(b);
 
+/**
+ * A CGM normally reports every ~5 min. If the newest reading is older than this, the data is
+ * stale — the portal must not present it as the patient's current glucose.
+ */
+export const STALE_AFTER_MIN = 20;
+
+/** Human-friendly age, e.g. "just now", "12 min ago", "15 h ago", "2 d ago". */
+export function formatAge(minutes: number): string {
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const h = Math.round(minutes / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.round(h / 24)} d ago`;
+}
+
 /** True when a timestamp falls on the local calendar day. */
 export function isToday(timestamp: string): boolean {
   const d = new Date(timestamp);
@@ -98,6 +113,10 @@ export interface GlucoseMetrics {
   /** Readings sorted oldest → newest (chronological). */
   readingsAsc: CGMReading[];
   latest?: CGMReading;
+  /** Minutes since the newest reading, or null when there are no readings. */
+  minutesSinceLatest: number | null;
+  /** True when the newest reading is too old to represent current glucose. */
+  stale: boolean;
   status: GlucoseStatus | null;
   zones: GlucoseZones;
   average: number | null;
@@ -122,6 +141,10 @@ export function computeMetrics(s: PatientSnapshot): GlucoseMetrics {
   const n = values.length;
   const zones = zonesFromSnapshot(s);
   const latest = readings[n - 1];
+  const minutesSinceLatest = latest
+    ? Math.max(0, Math.round((Date.now() - ts(latest)) / 60000))
+    : null;
+  const stale = minutesSinceLatest != null && minutesSinceLatest > STALE_AFTER_MIN;
 
   const average = n ? Math.round(values.reduce((a, b) => a + b, 0) / n) : null;
   const highest = n ? Math.max(...values) : null;
@@ -156,6 +179,8 @@ export function computeMetrics(s: PatientSnapshot): GlucoseMetrics {
     count: n,
     readingsAsc: readings,
     latest,
+    minutesSinceLatest,
+    stale,
     status: latest ? glucoseStatus(latest.value, zones) : null,
     zones,
     average,

@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Bell,
+  Clock,
   SlidersHorizontal,
   Sparkles,
   Syringe,
@@ -19,6 +20,7 @@ import { formatTime, getGlucoseColor } from "@/lib/utils";
 import {
   computeMetrics,
   detectPatterns,
+  formatAge,
   isToday,
   STATUS_META,
   glucoseStatus,
@@ -151,17 +153,26 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
         <Kpi
           label="Current Glucose"
           foot={
-            status && m.latest ? (
+            !m.latest ? (
+              "No data"
+            ) : m.stale && m.minutesSinceLatest != null ? (
+              <span className="flex items-center gap-1 text-amber-600">
+                <Clock className="w-3.5 h-3.5" />
+                {formatAge(m.minutesSinceLatest)} · may be outdated
+              </span>
+            ) : status ? (
               <span className={`flex items-center gap-1 ${status.text}`}>
                 <TrendIcon trend={m.latest.trend} className="w-3.5 h-3.5" />
                 {TREND_LABEL[m.latest.trend] ?? "Flat"} · {status.label}
               </span>
-            ) : (
-              "No data"
-            )
+            ) : undefined
           }
         >
-          <span className={`text-3xl font-display font-bold ${status?.text ?? "text-foreground"}`}>
+          <span
+            className={`text-3xl font-display font-bold ${
+              m.stale ? "text-muted-foreground" : (status?.text ?? "text-foreground")
+            }`}
+          >
             {m.latest?.value ?? "--"}
           </span>
           <span className="text-sm text-muted-foreground ml-1">mg/dL</span>

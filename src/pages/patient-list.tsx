@@ -18,7 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatTime } from "@/lib/utils";
-import { computeMetrics, STATUS_META, type GlucoseStatus } from "@/lib/glucose-metrics";
+import { computeMetrics, formatAge, STATUS_META, type GlucoseStatus } from "@/lib/glucose-metrics";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { useDoctorPatients, useLinkPatient, usePatientSnapshot } from "@/data/doctor-data";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
@@ -82,9 +82,11 @@ function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: ()
   const name = profile?.childName ?? entry.displayName ?? entry.accessCode;
   const dtype = diabetesLabel(profile?.diabetesType);
   const status = m?.status ?? null;
+  const stale = m?.stale ?? false;
   const meta = status ? STATUS_META[status] : null;
-  const order = status ? ORDER[status] : isLoading ? 4 : 3;
-  const accent = status ? ACCENT[status] : "border-l-border";
+  const showStatus = !!meta && !stale;
+  const order = !m || !m.latest ? (isLoading ? 5 : 4) : stale ? 3 : ORDER[status!];
+  const accent = m?.latest && !stale ? ACCENT[status!] : "border-l-border";
 
   return (
     <button onClick={onOpen} className="w-full text-left" style={{ order }}>
@@ -104,9 +106,14 @@ function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: ()
               </span>
             )}
             <span className="text-xs font-mono text-muted-foreground">{entry.accessCode}</span>
-            {meta && (
+            {showStatus && meta && (
               <span className={`text-xs px-2 py-0.5 rounded-full border ${meta.chip}`}>
                 {meta.label}
+              </span>
+            )}
+            {stale && (
+              <span className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-600 border-amber-500/30">
+                Stale
               </span>
             )}
           </div>
@@ -125,11 +132,15 @@ function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: ()
 
         {m?.latest ? (
           <div className="text-right shrink-0">
-            <div className={`flex items-center justify-end gap-1 ${meta?.text}`}>
+            <div
+              className={`flex items-center justify-end gap-1 ${stale ? "text-muted-foreground" : meta?.text}`}
+            >
               <TrendArrow trend={m.latest.trend} className="w-4 h-4" />
               <span className="text-2xl font-display font-bold">{m.latest.value}</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">mg/dL</p>
+            <p className="text-[11px] text-muted-foreground">
+              {stale && m.minutesSinceLatest != null ? formatAge(m.minutesSinceLatest) : "mg/dL"}
+            </p>
           </div>
         ) : (
           <span className="text-xs text-muted-foreground shrink-0">No data</span>
