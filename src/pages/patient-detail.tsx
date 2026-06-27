@@ -53,7 +53,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   const { signOut, lock, canLock } = useSession();
   const access = useCurrentDoctor();
   const doctor = access.status === "active" ? access.doctor : undefined;
-  const { data: detail, isLoading } = usePatientDetail(accessCode);
+  const { data: detail, isLoading, isFetching, refetch } = usePatientDetail(accessCode);
   const current = TABS.some((t) => t.id === tab) ? tab : "overview";
 
   if (isLoading) return <LoadingScreen message="Loading patient…" />;
@@ -148,7 +148,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
 
       <main className="flex-1 overflow-y-auto bg-background">
         <div className="max-w-7xl mx-auto p-5 lg:p-6 space-y-5">
-          <PatientHeader snapshot={detail.snapshot} />
+          <PatientHeader snapshot={detail.snapshot} onRefresh={refetch} refreshing={isFetching} />
           <div key={current} className="animate-fade-in">
             {current === "overview" && (
               <OverviewPanel data={detail.snapshot} accessCode={detail.accessCode} />

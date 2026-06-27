@@ -28,7 +28,15 @@ function MetaStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function PatientHeader({ snapshot }: { snapshot: PatientSnapshot }) {
+export function PatientHeader({
+  snapshot,
+  onRefresh,
+  refreshing,
+}: {
+  snapshot: PatientSnapshot;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const p = snapshot.profile;
   const m = computeMetrics(snapshot);
   const urgent = !m.stale && (m.status === "urgentHigh" || m.status === "urgentLow");
@@ -62,7 +70,15 @@ export function PatientHeader({ snapshot }: { snapshot: PatientSnapshot }) {
           {m.latest && m.minutesSinceLatest != null
             ? `Updated ${formatAge(m.minutesSinceLatest)}`
             : "No CGM data"}
-          <RefreshCw className="w-3.5 h-3.5 ml-1 opacity-70" />
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Refresh patient data"
+            aria-label="Refresh patient data"
+            className="ml-1 rounded-md p-1 hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
         </div>
       </div>
 

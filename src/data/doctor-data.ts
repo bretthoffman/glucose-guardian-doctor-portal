@@ -29,7 +29,9 @@ import type { MockOrganization } from "./mock";
 export function usePatientSnapshot(accessCode: string): {
   snapshot: PatientSnapshot | undefined;
   isLoading: boolean;
+  isFetching: boolean;
   error: Error | null;
+  refetch: () => void;
 } {
   const res = useGetPatientData(accessCode, {
     // @ts-expect-error Generated hook merges partial query options at runtime
@@ -38,7 +40,11 @@ export function usePatientSnapshot(accessCode: string): {
   return {
     snapshot: res.data as PatientSnapshot | undefined,
     isLoading: res.isLoading,
+    isFetching: res.isFetching,
     error: (res.error as Error | null) ?? null,
+    refetch: () => {
+      void res.refetch();
+    },
   };
 }
 
@@ -74,13 +80,15 @@ function snapshotToDetail(accessCode: string, snapshot: PatientSnapshot): Patien
   };
 }
 
-export function usePatientDetail(accessCode: string): QueryResult<PatientDetail> {
-  const { snapshot, isLoading, error } = usePatientSnapshot(accessCode);
+export function usePatientDetail(
+  accessCode: string,
+): QueryResult<PatientDetail> & { isFetching: boolean; refetch: () => void } {
+  const { snapshot, isLoading, isFetching, error, refetch } = usePatientSnapshot(accessCode);
   const data = useMemo(
     () => (snapshot ? snapshotToDetail(accessCode, snapshot) : undefined),
     [accessCode, snapshot],
   );
-  return { data, isLoading, error };
+  return { data, isLoading, error, isFetching, refetch };
 }
 
 // ---- Linked patients (device-stored until a backend grant table exists) ----
