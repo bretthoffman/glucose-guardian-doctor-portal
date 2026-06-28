@@ -115,7 +115,7 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div>
+      <div data-tour="treatment">
         <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
           <Sliders className="w-6 h-6 text-primary" />
           Treatment settings

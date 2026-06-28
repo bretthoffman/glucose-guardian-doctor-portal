@@ -111,7 +111,7 @@ export function MessagesPanel({ accessCode, patientName }: { accessCode: string,
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-background border-t border-border">
+      <div className="p-4 bg-background border-t border-border" data-tour="messages-input">
         <form onSubmit={handleSend} className="flex gap-2">
           <Input 
             value={inputText}

@@ -393,7 +393,10 @@ export function ChartPanel({ data }: { data: PatientSnapshot }) {
 
       {/* Filters */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1 bg-card border border-border rounded-xl p-1">
+        <div
+          data-tour="range"
+          className="flex items-center gap-1 bg-card border border-border rounded-xl p-1"
+        >
           {RANGES.map((d) => (
             <button
               key={d}
@@ -465,7 +468,7 @@ export function ChartPanel({ data }: { data: PatientSnapshot }) {
         </div>
 
         {/* Insights */}
-        <div className="bg-card border border-border rounded-2xl p-5">
+        <div data-tour="insights" className="bg-card border border-border rounded-2xl p-5">
           <h3 className="text-sm font-medium text-foreground flex items-center gap-2 mb-4">
             <LineChartIcon className="w-4 h-4 text-primary" /> Insights
           </h3>

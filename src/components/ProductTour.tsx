@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 export interface TourStep {
   selector: string;
   title: string;
   body: string;
+  /** Tab/route this step lives on; the tour navigates there before highlighting. */
+  tab?: string;
 }
 
 const SEEN_KEY = "gg_tour_seen";
@@ -12,18 +14,28 @@ const SEEN_KEY = "gg_tour_seen";
 export const TOUR_EVENT = "gg:start-tour";
 
 /**
- * Lightweight first-run product tour: dims the screen, spotlights one element at a time, and shows
- * a tooltip with Back / Next / Skip. Runs automatically the first time (unless `enabled` is false),
- * and can be replayed by dispatching TOUR_EVENT. No external dependencies.
+ * Lightweight, dependency-free product tour. Dims the screen and spotlights one element at a time
+ * with a Back / Next / Skip tooltip. Steps can live on different tabs — the tour calls `onNavigate`
+ * and then waits for the target element to mount before positioning. Runs once on first visit
+ * (unless `enabled` is false) and can be replayed via TOUR_EVENT.
  */
-export function ProductTour({ steps, enabled = true }: { steps: TourStep[]; enabled?: boolean }) {
+export function ProductTour({
+  steps,
+  enabled = true,
+  onNavigate,
+}: {
+  steps: TourStep[];
+  enabled?: boolean;
+  onNavigate?: (tab: string) => void;
+}) {
   const [active, setActive] = useState(false);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const started = useRef(false);
 
   // Auto-start once.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || started.current) return;
     let seen = false;
     try {
       seen = !!localStorage.getItem(SEEN_KEY);
@@ -31,6 +43,7 @@ export function ProductTour({ steps, enabled = true }: { steps: TourStep[]; enab
       /* ignore */
     }
     if (!seen) {
+      started.current = true;
       setI(0);
       setActive(true);
     }
@@ -39,6 +52,7 @@ export function ProductTour({ steps, enabled = true }: { steps: TourStep[]; enab
   // Replay on demand.
   useEffect(() => {
     const onStart = () => {
+      started.current = true;
       setI(0);
       setActive(true);
     };
@@ -50,24 +64,38 @@ export function ProductTour({ steps, enabled = true }: { steps: TourStep[]; enab
 
   useLayoutEffect(() => {
     if (!step) return;
+    if (step.tab) onNavigate?.(step.tab);
+
+    let raf = 0;
+    let tries = 0;
+    let cancelled = false;
     const place = () => {
+      if (cancelled) return;
       const el = document.querySelector(step.selector);
       if (!el) {
-        setRect(null);
+        // Target may belong to a tab that just started mounting — poll briefly.
+        if (tries++ < 40) raf = requestAnimationFrame(place);
+        else setRect(null);
         return;
       }
       el.scrollIntoView({ block: "nearest", inline: "nearest" });
       setRect(el.getBoundingClientRect());
     };
     place();
-    const onChange = () => place();
+
+    const onChange = () => {
+      const el = document.querySelector(step.selector);
+      if (el) setRect(el.getBoundingClientRect());
+    };
     window.addEventListener("resize", onChange);
     window.addEventListener("scroll", onChange, true);
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
       window.removeEventListener("resize", onChange);
       window.removeEventListener("scroll", onChange, true);
     };
-  }, [step]);
+  }, [step, onNavigate]);
 
   if (!step) return null;
 
@@ -98,10 +126,10 @@ export function ProductTour({ steps, enabled = true }: { steps: TourStep[]; enab
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const left = Math.min(Math.max(rect.left, 16), vw - TW - 16);
-    const below = rect.bottom + 14 + 180 < vh;
+    const below = rect.bottom + 14 + 184 < vh;
     tipStyle = below
       ? { top: rect.bottom + 14, left }
-      : { top: Math.max(16, rect.top - 14 - 184), left };
+      : { top: Math.max(16, rect.top - 14 - 188), left };
   } else {
     tipStyle = { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
   }

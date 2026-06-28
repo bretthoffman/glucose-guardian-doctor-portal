@@ -209,8 +209,9 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
       Edit
     </button>
   );
-  const fullView = (tab: string, label = "Full view") => (
+  const fullView = (tab: string, label = "Full view", tourId?: string) => (
     <button
+      data-tour={tourId}
       onClick={() => go(tab)}
       className="text-xs text-primary hover:underline flex items-center gap-1"
     >
@@ -313,7 +314,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-foreground">Continuous Glucose Monitor</h3>
-              {fullView("chart", "Full trends")}
+              {fullView("chart", "Full trends", "drilldown")}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-5">
               <QuickStat label="Average" value={m.average != null ? `${m.average}` : "--"} />

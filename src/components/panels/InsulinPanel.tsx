@@ -344,7 +344,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
       {/* ── MAIN ────────────────────────────────────────────────── */}
       <div className="space-y-5 min-w-0">
         {/* Calendar strip */}
-        <div className="bg-card border border-border rounded-2xl p-3">
+        <div data-tour="calendar" className="bg-card border border-border rounded-2xl p-3">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative shrink-0" ref={dateRef}>
               <div className="flex items-center gap-2">
@@ -523,7 +523,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
         {/* Meal review | chart + event log */}
         <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-5 items-start">
           {/* Daily Meal & Insulin Review */}
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div data-tour="meals" className="bg-card border border-border rounded-2xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border/60">
               <h3 className="font-medium text-foreground flex items-center gap-2">
                 <Utensils className="w-4 h-4 text-primary" /> Daily Meal &amp; Insulin Review
@@ -764,7 +764,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
           )}
         </RailCard>
 
-        <div className="space-y-2">
+        <div className="space-y-2" data-tour="actions">
           <button
             onClick={openComposer}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"

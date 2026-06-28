@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -46,21 +47,73 @@ const DRILL_DOWN = ["chart", "insulin"];
 
 const TOUR_STEPS: TourStep[] = [
   {
+    tab: "overview",
     selector: '[data-tour="patient"]',
     title: "Your patient at a glance",
     body: "Name, type, and their latest glucose live here — always visible, on every screen.",
   },
   {
+    tab: "overview",
     selector: '[data-tour="customize"]',
     title: "Make the Overview yours",
-    body: "Click Customize to show or hide any card. Uncheck what you don't need and the rest reflow into place — start broad, then trim to what matters.",
+    body: "Show or hide any card. Uncheck what you don't need and the rest reflow — or Clear all and add just what you want.",
   },
   {
+    tab: "overview",
+    selector: '[data-tour="drilldown"]',
+    title: "Cards open deeper tools",
+    body: "Many cards link to a full view — like “Full trends” here. Let's open the ones tucked behind these links.",
+  },
+  {
+    tab: "chart",
+    selector: '[data-tour="range"]',
+    title: "CGM / A1C Trends",
+    body: "Opened from the CGM card. Filter from 3 days to a year to see whether control is improving or slipping.",
+  },
+  {
+    tab: "chart",
+    selector: '[data-tour="insights"]',
+    title: "Plain-language insights",
+    body: "A quick read on what's driving the A1C and where to look next.",
+  },
+  {
+    tab: "insulin",
+    selector: '[data-tour="calendar"]',
+    title: "Daily Review — pick any day",
+    body: "Reached from the Food Log (“Daily review”) and Insulin (“View all”) cards. Step with the arrows, drag the strip, or click the date for a calendar.",
+  },
+  {
+    tab: "insulin",
+    selector: '[data-tour="meals"]',
+    title: "Meals, insulin & response",
+    body: "Each meal shows its carbs, the insulin given, and the glucose before and after — so you can see what worked.",
+  },
+  {
+    tab: "insulin",
+    selector: '[data-tour="actions"]',
+    title: "Act on what you see",
+    body: "Add a clinical note, message the caregiver, or propose a treatment change right from the review.",
+  },
+  {
+    tab: "orders",
+    selector: '[data-tour="treatment"]',
+    title: "Treatment Settings",
+    body: "Propose carb-ratio and correction changes — they take effect only after the caregiver confirms in the app.",
+  },
+  {
+    tab: "messages",
+    selector: '[data-tour="messages-input"]',
+    title: "Message the caregiver",
+    body: "Chat directly with the patient's guardian here.",
+  },
+  {
+    tab: "overview",
     selector: '[data-tour="nav"]',
     title: "Getting around",
-    body: "Overview is your home. Treatment Settings and Messages are here too; the deeper CGM and insulin views open from their Overview cards.",
+    body: "Overview is home. Treatment Settings and Messages are in the nav; the deep CGM and insulin views open from their cards.",
   },
   {
+    tab: "overview",
     selector: '[data-tour="switch"]',
     title: "Switch patients anytime",
     body: "Jump back to your full patient list whenever you need to.",
@@ -107,6 +160,10 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   const access = useCurrentDoctor();
   const doctor = access.status === "active" ? access.doctor : undefined;
   const { data: detail, isLoading, isFetching, refetch } = usePatientDetail(accessCode);
+  const navigateTab = useCallback(
+    (t: string) => setLocation(`/patient/${accessCode}/${t}`),
+    [setLocation, accessCode],
+  );
   const current = TABS.some((t) => t.id === tab) ? tab : "overview";
 
   if (isLoading) return <LoadingScreen message="Loading patient…" />;
@@ -276,7 +333,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </div>
         </div>
       </main>
-      <ProductTour steps={TOUR_STEPS} enabled={current === "overview"} />
+      <ProductTour steps={TOUR_STEPS} enabled={current === "overview"} onNavigate={navigateTab} />
     </div>
   );
 }
