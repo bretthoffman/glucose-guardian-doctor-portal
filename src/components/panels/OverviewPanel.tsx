@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowRight,
@@ -9,11 +9,15 @@ import {
   Bell,
   Clock,
   SlidersHorizontal,
+  Settings2,
   Sparkles,
   Syringe,
+  Utensils,
+  Camera,
   MessageSquare,
   Stethoscope,
   User,
+  LayoutGrid,
 } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatTime, getGlucoseColor } from "@/lib/utils";
@@ -27,6 +31,45 @@ import {
   TREND_LABEL,
 } from "@/lib/glucose-metrics";
 import { GlucoseChart } from "@/components/GlucoseChart";
+
+// ── Customizable widget registry ─────────────────────────────────────────────
+const STORAGE_KEY = "gg_overview_widgets";
+
+type WidgetGroup = "kpi" | "chart" | "module";
+interface WidgetDef {
+  id: string;
+  label: string;
+  group: WidgetGroup;
+}
+
+const WIDGETS: WidgetDef[] = [
+  { id: "current", label: "Current Glucose", group: "kpi" },
+  { id: "a1c", label: "Estimated A1C / GMI", group: "kpi" },
+  { id: "tir", label: "Time in Range", group: "kpi" },
+  { id: "insulinToday", label: "Insulin Today", group: "kpi" },
+  { id: "tar", label: "Time Above Range", group: "kpi" },
+  { id: "cgm", label: "CGM Chart", group: "chart" },
+  { id: "alerts", label: "Alert Thresholds", group: "module" },
+  { id: "ratios", label: "Ratios & Factors", group: "module" },
+  { id: "patterns", label: "Detected Patterns", group: "module" },
+  { id: "readings", label: "Recent Readings", group: "module" },
+  { id: "food", label: "Food Log", group: "module" },
+  { id: "insulinLog", label: "Insulin Log (Today)", group: "module" },
+  { id: "messages", label: "Recent Messages", group: "module" },
+];
+
+function allOn(): Record<string, boolean> {
+  return Object.fromEntries(WIDGETS.map((w) => [w.id, true]));
+}
+
+function loadVisible(): Record<string, boolean> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    return { ...allOn(), ...saved };
+  } catch {
+    return allOn();
+  }
+}
 
 function TrendIcon({ trend, className = "w-4 h-4" }: { trend: string; className?: string }) {
   switch (trend) {
@@ -80,7 +123,7 @@ function Kpi({
   right?: ReactNode;
 }) {
   return (
-    <div className="bg-card border border-border rounded-2xl p-4">
+    <div className="bg-card border border-border rounded-2xl p-4 h-full">
       <p className="text-xs text-muted-foreground mb-1.5">{label}</p>
       <div className="flex items-end justify-between gap-2">
         <div className="min-w-0">{children}</div>
@@ -127,6 +170,32 @@ function QuickStat({ label, value, accent }: { label: string; value: string; acc
 
 export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; accessCode: string }) {
   const [, setLocation] = useLocation();
+  const [visible, setVisible] = useState<Record<string, boolean>>(loadVisible);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const customizeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!customizeOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (customizeRef.current && !customizeRef.current.contains(e.target as Node)) {
+        setCustomizeOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [customizeOpen]);
+
+  const persist = (next: Record<string, boolean>) => {
+    setVisible(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggle = (id: string) => persist({ ...visible, [id]: !visible[id] });
+  const resetAll = () => persist(allOn());
+
   const m = computeMetrics(data);
   const z = m.zones;
   const p = data.profile;
@@ -139,123 +208,134 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
       Edit
     </button>
   );
+  const fullView = (tab: string, label = "Full view") => (
+    <button
+      onClick={() => go(tab)}
+      className="text-xs text-primary hover:underline flex items-center gap-1"
+    >
+      {label} <ArrowRight className="w-3.5 h-3.5" />
+    </button>
+  );
 
   const messages = data.messages ?? [];
   const recentReadings = [...m.readingsAsc].reverse().slice(0, 6);
   const todayInsulin = (data.insulinLog ?? [])
     .filter((l) => isToday(l.timestamp))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const meals = [...(data.foodLog ?? [])].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
 
-  return (
-    <div className="space-y-5">
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <Kpi
-          label="Current Glucose"
-          foot={
-            !m.latest ? (
-              "No data"
-            ) : m.stale && m.minutesSinceLatest != null ? (
-              <span className="flex items-center gap-1 text-amber-600">
-                <Clock className="w-3.5 h-3.5" />
-                {formatAge(m.minutesSinceLatest)} · may be outdated
-              </span>
-            ) : status ? (
-              <span className={`flex items-center gap-1 ${status.text}`}>
-                <TrendIcon trend={m.latest.trend} className="w-3.5 h-3.5" />
-                {TREND_LABEL[m.latest.trend] ?? "Flat"} · {status.label}
-              </span>
-            ) : undefined
-          }
-        >
-          <span
-            className={`text-3xl font-display font-bold ${
-              m.stale ? "text-muted-foreground" : (status?.text ?? "text-foreground")
-            }`}
+  function renderWidget(id: string): ReactNode {
+    switch (id) {
+      case "current":
+        return (
+          <Kpi
+            label="Current Glucose"
+            foot={
+              !m.latest ? (
+                "No data"
+              ) : m.stale && m.minutesSinceLatest != null ? (
+                <span className="flex items-center gap-1 text-amber-600">
+                  <Clock className="w-3.5 h-3.5" />
+                  {formatAge(m.minutesSinceLatest)} · may be outdated
+                </span>
+              ) : status ? (
+                <span className={`flex items-center gap-1 ${status.text}`}>
+                  <TrendIcon trend={m.latest.trend} className="w-3.5 h-3.5" />
+                  {TREND_LABEL[m.latest.trend] ?? "Flat"} · {status.label}
+                </span>
+              ) : undefined
+            }
           >
-            {m.latest?.value ?? "--"}
-          </span>
-          <span className="text-sm text-muted-foreground ml-1">mg/dL</span>
-        </Kpi>
-
-        <Kpi
-          label="Estimated A1C (7d)"
-          foot="Goal: < 7.0%"
-          right={
-            a1cNum != null ? (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full border ${
-                  a1cNum > 7 ? STATUS_META.high.chip : STATUS_META.target.chip
-                }`}
-              >
-                {a1cNum > 7 ? "High" : "On target"}
-              </span>
-            ) : undefined
-          }
-        >
-          <span className="text-3xl font-display font-bold text-foreground">
-            {m.a1c ? `${m.a1c}%` : "--"}
-          </span>
-        </Kpi>
-
-        <Kpi label="Time in Range (24h)" foot="Goal: > 70%" right={<Ring pct={m.tir} />}>
-          <span className="text-3xl font-display font-bold text-foreground">{m.tir}%</span>
-        </Kpi>
-
-        <Kpi label="Insulin Today" foot="Total dose">
-          <span className="text-3xl font-display font-bold text-foreground">
-            {m.insulinToday.toFixed(1)}
-          </span>
-          <span className="text-sm text-muted-foreground ml-1">u</span>
-        </Kpi>
-
-        <Kpi label="Time Above Range" foot="Goal: < 25%">
-          <span
-            className={`text-3xl font-display font-bold ${
-              m.tar > 25 ? "text-destructive" : "text-foreground"
-            }`}
-          >
-            {m.tar}%
-          </span>
-        </Kpi>
-      </div>
-
-      {/* Chart + utility column */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-foreground">Continuous Glucose Monitor</h3>
-            <button
-              onClick={() => go("chart")}
-              className="text-xs text-primary hover:underline flex items-center gap-1"
+            <span
+              className={`text-3xl font-display font-bold ${
+                m.stale ? "text-muted-foreground" : (status?.text ?? "text-foreground")
+              }`}
             >
-              Full chart <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+              {m.latest?.value ?? "--"}
+            </span>
+            <span className="text-sm text-muted-foreground ml-1">mg/dL</span>
+          </Kpi>
+        );
+      case "a1c":
+        return (
+          <Kpi
+            label="Estimated A1C / GMI"
+            foot="Goal: < 7.0%"
+            right={
+              a1cNum != null ? (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full border ${
+                    a1cNum > 7 ? STATUS_META.high.chip : STATUS_META.target.chip
+                  }`}
+                >
+                  {a1cNum > 7 ? "High" : "On target"}
+                </span>
+              ) : undefined
+            }
+          >
+            <span className="text-3xl font-display font-bold text-foreground">
+              {m.a1c ? `${m.a1c}%` : "--"}
+            </span>
+          </Kpi>
+        );
+      case "tir":
+        return (
+          <Kpi label="Time in Range (24h)" foot="Goal: > 70%" right={<Ring pct={m.tir} />}>
+            <span className="text-3xl font-display font-bold text-foreground">{m.tir}%</span>
+          </Kpi>
+        );
+      case "insulinToday":
+        return (
+          <Kpi label="Insulin Today" foot="Total dose">
+            <span className="text-3xl font-display font-bold text-foreground">
+              {m.insulinToday.toFixed(1)}
+            </span>
+            <span className="text-sm text-muted-foreground ml-1">u</span>
+          </Kpi>
+        );
+      case "tar":
+        return (
+          <Kpi label="Time Above Range" foot="Goal: < 25%">
+            <span
+              className={`text-3xl font-display font-bold ${
+                m.tar > 25 ? "text-destructive" : "text-foreground"
+              }`}
+            >
+              {m.tar}%
+            </span>
+          </Kpi>
+        );
+      case "cgm":
+        return (
+          <div className="bg-card border border-border rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-foreground">Continuous Glucose Monitor</h3>
+              {fullView("chart", "Full trends")}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-5">
+              <QuickStat label="Average" value={m.average != null ? `${m.average}` : "--"} />
+              <QuickStat label="Highest" value={m.highest != null ? `${m.highest}` : "--"} accent="text-warning" />
+              <QuickStat label="Lowest" value={m.lowest != null ? `${m.lowest}` : "--"} accent="text-orange-500" />
+              <QuickStat
+                label="Variability"
+                value={m.variability}
+                accent={m.variability === "High" ? "text-warning" : "text-foreground"}
+              />
+              <QuickStat label="Sensor Usage" value={m.sensorUsage != null ? `${m.sensorUsage}%` : "--"} />
+            </div>
+            <GlucoseChart readings={m.readingsAsc} zones={z} height={300} />
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-4 text-xs text-muted-foreground">
+              <Legend hex={STATUS_META.target.hex} label={`Target ${z.low}–${z.high}`} />
+              <Legend hex={STATUS_META.high.hex} label={`High ${z.high}–${z.urgentHigh}`} />
+              <Legend hex={STATUS_META.urgentHigh.hex} label={`Urgent >${z.urgentHigh}`} />
+              <Legend hex={STATUS_META.low.hex} label={`Low <${z.low}`} />
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-5">
-            <QuickStat label="Average" value={m.average != null ? `${m.average}` : "--"} />
-            <QuickStat label="Highest" value={m.highest != null ? `${m.highest}` : "--"} accent="text-warning" />
-            <QuickStat label="Lowest" value={m.lowest != null ? `${m.lowest}` : "--"} accent="text-orange-500" />
-            <QuickStat
-              label="Variability"
-              value={m.variability}
-              accent={m.variability === "High" ? "text-warning" : "text-foreground"}
-            />
-            <QuickStat
-              label="Sensor Usage"
-              value={m.sensorUsage != null ? `${m.sensorUsage}%` : "--"}
-            />
-          </div>
-          <GlucoseChart readings={m.readingsAsc} zones={z} height={300} />
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-4 text-xs text-muted-foreground">
-            <Legend hex={STATUS_META.target.hex} label={`Target ${z.low}–${z.high}`} />
-            <Legend hex={STATUS_META.high.hex} label={`High ${z.high}–${z.urgentHigh}`} />
-            <Legend hex={STATUS_META.urgentHigh.hex} label={`Urgent >${z.urgentHigh}`} />
-            <Legend hex={STATUS_META.low.hex} label={`Low <${z.low}`} />
-          </div>
-        </div>
-
-        <div className="space-y-5">
+        );
+      case "alerts":
+        return (
           <SectionCard title="Alert Thresholds" icon={Bell} action={editLink}>
             <div className="space-y-2.5">
               <ThresholdRow label="Urgent High" value={`> ${z.urgentHigh}`} tone="text-destructive" />
@@ -265,7 +345,9 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
               <ThresholdRow label="Urgent Low" value={`< ${z.urgentLow}`} tone="text-destructive" />
             </div>
           </SectionCard>
-
+        );
+      case "ratios":
+        return (
           <SectionCard title="Ratios & Factors" icon={SlidersHorizontal} action={editLink}>
             <div className="space-y-2.5 text-sm">
               <KeyVal label="Carb Ratio" value={`1u : ${p.carbRatio ?? "--"}g`} />
@@ -273,7 +355,9 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
               <KeyVal label="Target Glucose" value={`${p.targetGlucose ?? "--"} mg/dL`} />
             </div>
           </SectionCard>
-
+        );
+      case "patterns":
+        return (
           <SectionCard title="Detected Patterns" icon={Sparkles}>
             <ul className="space-y-2.5">
               {patterns.map((pat) => (
@@ -284,108 +368,189 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
               ))}
             </ul>
           </SectionCard>
+        );
+      case "readings":
+        return (
+          <SectionCard title="Recent Readings" icon={Stethoscope} action={fullView("chart", "View all")}>
+            {recentReadings.length ? (
+              <div className="space-y-1">
+                {recentReadings.map((r, i) => {
+                  const meta = STATUS_META[glucoseStatus(r.value, z)];
+                  return (
+                    <div key={i} className="flex items-center justify-between py-1.5 text-sm">
+                      <span className="text-muted-foreground">{formatTime(r.timestamp)}</span>
+                      <span className={`flex items-center gap-1 ${meta.text}`}>
+                        <TrendIcon trend={r.trend} className="w-3.5 h-3.5" />
+                      </span>
+                      <span
+                        className={`font-medium px-2 py-0.5 rounded-full text-xs ${getGlucoseColor(r.value)}`}
+                      >
+                        {r.value}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4 text-center">No readings yet.</p>
+            )}
+          </SectionCard>
+        );
+      case "food":
+        return (
+          <SectionCard title="Food Log" icon={Utensils} action={fullView("insulin", "Daily review")}>
+            {meals.length ? (
+              <div className="space-y-3">
+                {meals.slice(0, 4).map((f) => (
+                  <div key={f.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="text-foreground truncate flex items-center gap-1.5">
+                        {f.foodName}
+                        {f.fromPhoto && <Camera className="w-3 h-3 text-muted-foreground shrink-0" />}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{formatTime(f.timestamp)}</p>
+                    </div>
+                    <span className="text-foreground font-medium shrink-0">{f.estimatedCarbs}g</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4 text-center">No meals logged.</p>
+            )}
+          </SectionCard>
+        );
+      case "insulinLog":
+        return (
+          <SectionCard title="Insulin Log (Today)" icon={Syringe} action={fullView("insulin", "View all")}>
+            {todayInsulin.length ? (
+              <div className="space-y-2.5">
+                {todayInsulin.slice(0, 4).map((l) => (
+                  <div key={l.id} className="flex items-center justify-between text-sm">
+                    <div className="min-w-0">
+                      <span className="font-medium text-primary">{l.units}u</span>
+                      <span className="text-muted-foreground ml-2 capitalize">{l.type}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{formatTime(l.timestamp)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4 text-center">No insulin logged today.</p>
+            )}
+          </SectionCard>
+        );
+      case "messages":
+        return (
+          <SectionCard title="Recent Messages" icon={MessageSquare} action={fullView("messages", "View all")}>
+            {messages.length ? (
+              <div className="space-y-3">
+                {messages.slice(-3).map((msg) => (
+                  <div key={msg.id} className="flex items-start gap-2.5">
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                        msg.sender === "doctor" ? "bg-primary" : "bg-secondary border border-border"
+                      }`}
+                    >
+                      {msg.sender === "doctor" ? (
+                        <Stethoscope className="w-3.5 h-3.5 text-primary-foreground" />
+                      ) : (
+                        <User className="w-3.5 h-3.5 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm text-foreground line-clamp-2">{msg.text}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {msg.sender === "doctor" ? "You" : "Caregiver"} · {formatTime(msg.timestamp)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4 text-center">No messages yet.</p>
+            )}
+          </SectionCard>
+        );
+      default:
+        return null;
+    }
+  }
+
+  const kpis = WIDGETS.filter((w) => w.group === "kpi" && visible[w.id]);
+  const modules = WIDGETS.filter((w) => w.group === "module" && visible[w.id]);
+  const showChart = !!visible["cgm"];
+  const nothingVisible = kpis.length === 0 && modules.length === 0 && !showChart;
+
+  return (
+    <div className="space-y-5">
+      {/* Customize toolbar */}
+      <div className="flex items-center justify-end">
+        <div className="relative" ref={customizeRef}>
+          <button
+            onClick={() => setCustomizeOpen((o) => !o)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-sm text-foreground hover:bg-secondary transition-colors"
+          >
+            <Settings2 className="w-4 h-4" /> Customize
+          </button>
+          {customizeOpen && (
+            <div className="absolute right-0 top-full mt-2 z-30 w-64 bg-card border border-border rounded-xl shadow-2xl p-3">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Show on overview
+                </p>
+                <button onClick={resetAll} className="text-xs text-primary hover:underline">
+                  Reset
+                </button>
+              </div>
+              <div className="space-y-0.5 max-h-80 overflow-y-auto">
+                {WIDGETS.map((w) => (
+                  <label
+                    key={w.id}
+                    className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary cursor-pointer text-sm text-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!visible[w.id]}
+                      onChange={() => toggle(w.id)}
+                      className="accent-[hsl(217_91%_60%)] w-4 h-4"
+                    />
+                    {w.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Lower cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <SectionCard
-          title="Recent Readings"
-          icon={Stethoscope}
-          action={
-            <button onClick={() => go("chart")} className="text-xs text-primary hover:underline">
-              View all
-            </button>
-          }
-        >
-          {recentReadings.length ? (
-            <div className="space-y-1">
-              {recentReadings.map((r, i) => {
-                const meta = STATUS_META[glucoseStatus(r.value, z)];
-                return (
-                  <div key={i} className="flex items-center justify-between py-1.5 text-sm">
-                    <span className="text-muted-foreground">{formatTime(r.timestamp)}</span>
-                    <span className={`flex items-center gap-1 ${meta.text}`}>
-                      <TrendIcon trend={r.trend} className="w-3.5 h-3.5" />
-                    </span>
-                    <span
-                      className={`font-medium px-2 py-0.5 rounded-full text-xs ${getGlucoseColor(r.value)}`}
-                    >
-                      {r.value}
-                    </span>
-                  </div>
-                );
-              })}
+      {nothingVisible ? (
+        <div className="text-center py-16 text-muted-foreground border-2 border-dashed border-border rounded-2xl">
+          <LayoutGrid className="w-8 h-8 mx-auto mb-3 opacity-60" />
+          <p className="text-sm">Nothing to show. Use Customize to add cards back.</p>
+        </div>
+      ) : (
+        <>
+          {kpis.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+              {kpis.map((w) => (
+                <div key={w.id}>{renderWidget(w.id)}</div>
+              ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">No readings yet.</p>
           )}
-        </SectionCard>
 
-        <SectionCard
-          title="Insulin Log (Today)"
-          icon={Syringe}
-          action={
-            <button onClick={() => go("insulin")} className="text-xs text-primary hover:underline">
-              View all
-            </button>
-          }
-        >
-          {todayInsulin.length ? (
-            <div className="space-y-2.5">
-              {todayInsulin.slice(0, 4).map((l) => (
-                <div key={l.id} className="flex items-center justify-between text-sm">
-                  <div className="min-w-0">
-                    <span className="font-medium text-primary">{l.units}u</span>
-                    <span className="text-muted-foreground ml-2 capitalize">{l.type}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{formatTime(l.timestamp)}</span>
+          {showChart && renderWidget("cgm")}
+
+          {modules.length > 0 && (
+            <div className="columns-1 md:columns-2 xl:columns-3 gap-5">
+              {modules.map((w) => (
+                <div key={w.id} className="break-inside-avoid mb-5">
+                  {renderWidget(w.id)}
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">No insulin logged today.</p>
           )}
-        </SectionCard>
-
-        <SectionCard
-          title="Recent Messages"
-          icon={MessageSquare}
-          action={
-            <button onClick={() => go("messages")} className="text-xs text-primary hover:underline">
-              View all
-            </button>
-          }
-        >
-          {messages.length ? (
-            <div className="space-y-3">
-              {messages.slice(-3).map((msg) => (
-                <div key={msg.id} className="flex items-start gap-2.5">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                      msg.sender === "doctor" ? "bg-primary" : "bg-secondary border border-border"
-                    }`}
-                  >
-                    {msg.sender === "doctor" ? (
-                      <Stethoscope className="w-3.5 h-3.5 text-primary-foreground" />
-                    ) : (
-                      <User className="w-3.5 h-3.5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-foreground line-clamp-2">{msg.text}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {msg.sender === "doctor" ? "You" : "Caregiver"} · {formatTime(msg.timestamp)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">No messages yet.</p>
-          )}
-        </SectionCard>
-      </div>
+        </>
+      )}
     </div>
   );
 }
