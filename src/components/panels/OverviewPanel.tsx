@@ -195,6 +195,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
   };
   const toggle = (id: string) => persist({ ...visible, [id]: !visible[id] });
   const resetAll = () => persist(allOn());
+  const clearAll = () => persist(Object.fromEntries(WIDGETS.map((w) => [w.id, false])));
 
   const m = computeMetrics(data);
   const z = m.zones;
@@ -487,6 +488,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
       <div className="flex items-center justify-end">
         <div className="relative" ref={customizeRef}>
           <button
+            data-tour="customize"
             onClick={() => setCustomizeOpen((o) => !o)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-sm text-foreground hover:bg-secondary transition-colors"
           >
@@ -498,9 +500,14 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   Show on overview
                 </p>
-                <button onClick={resetAll} className="text-xs text-primary hover:underline">
-                  Reset
-                </button>
+                <div className="flex items-center gap-3">
+                  <button onClick={clearAll} className="text-xs text-primary hover:underline">
+                    Clear all
+                  </button>
+                  <button onClick={resetAll} className="text-xs text-destructive hover:underline">
+                    Reset
+                  </button>
+                </div>
               </div>
               <div className="space-y-0.5 max-h-80 overflow-y-auto">
                 {WIDGETS.map((w) => (

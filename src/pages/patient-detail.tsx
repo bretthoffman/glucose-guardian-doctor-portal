@@ -16,10 +16,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ArrowRight,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PatientHeader } from "@/components/PatientHeader";
+import { ProductTour, TOUR_EVENT, type TourStep } from "@/components/ProductTour";
 import { computeMetrics, STATUS_META, formatAge } from "@/lib/glucose-metrics";
 import { OverviewPanel } from "@/components/panels/OverviewPanel";
 import { ChartPanel } from "@/components/panels/ChartPanel";
@@ -41,6 +43,29 @@ const TABS = [
   { id: "messages", label: "Messages", icon: MessageSquare, inNav: true },
 ];
 const DRILL_DOWN = ["chart", "insulin"];
+
+const TOUR_STEPS: TourStep[] = [
+  {
+    selector: '[data-tour="patient"]',
+    title: "Your patient at a glance",
+    body: "Name, type, and their latest glucose live here — always visible, on every screen.",
+  },
+  {
+    selector: '[data-tour="customize"]',
+    title: "Make the Overview yours",
+    body: "Click Customize to show or hide any card. Uncheck what you don't need and the rest reflow into place — start broad, then trim to what matters.",
+  },
+  {
+    selector: '[data-tour="nav"]',
+    title: "Getting around",
+    body: "Overview is your home. Treatment Settings and Messages are here too; the deeper CGM and insulin views open from their Overview cards.",
+  },
+  {
+    selector: '[data-tour="switch"]',
+    title: "Switch patients anytime",
+    body: "Jump back to your full patient list whenever you need to.",
+  },
+];
 
 function initials(name?: string): string {
   if (!name) return "?";
@@ -104,7 +129,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </div>
         </div>
 
-        <div className="p-3 border-b border-border/60">
+        <div className="p-3 border-b border-border/60" data-tour="patient">
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground px-1 mb-1.5">
             Patient
           </p>
@@ -160,6 +185,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </div>
 
           <button
+            data-tour="switch"
             onClick={() => setLocation("/")}
             className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
@@ -167,7 +193,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto" data-tour="nav">
           {TABS.filter((t) => t.inNav).map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -201,6 +227,12 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
               </div>
             </div>
           )}
+          <button
+            onClick={() => window.dispatchEvent(new Event(TOUR_EVENT))}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <HelpCircle className="w-[18px] h-[18px] opacity-70" /> Take a Tour
+          </button>
           {canLock && (
             <button
               onClick={lock}
@@ -244,6 +276,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </div>
         </div>
       </main>
+      <ProductTour steps={TOUR_STEPS} enabled={current === "overview"} />
     </div>
   );
 }
