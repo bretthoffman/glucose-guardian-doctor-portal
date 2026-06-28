@@ -10,6 +10,7 @@ import {
   Activity,
   ChevronsUpDown,
   ArrowLeft,
+  ArrowLeftRight,
   ArrowUp,
   ArrowDown,
   ArrowUpRight,
@@ -153,6 +154,13 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
               <p className="text-sm text-muted-foreground mt-0.5">No CGM data</p>
             )}
           </div>
+
+          <button
+            onClick={() => setLocation("/")}
+            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <ArrowLeftRight className="w-4 h-4" /> Switch Patient
+          </button>
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
