@@ -30,13 +30,17 @@ import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
 
+// `inNav: false` tabs are still valid routes (reached from Overview cards) but hidden from the
+// sidebar — the three lookalike pages collapse into one Overview home. Flip these back to true
+// to restore them in the nav.
 const TABS = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "chart", label: "CGM / A1C Trends", icon: LineChart },
-  { id: "insulin", label: "Insulin Log", icon: Syringe },
-  { id: "orders", label: "Treatment Settings", icon: SlidersHorizontal },
-  { id: "messages", label: "Messages", icon: MessageSquare },
+  { id: "overview", label: "Overview", icon: LayoutDashboard, inNav: true },
+  { id: "chart", label: "CGM / A1C Trends", icon: LineChart, inNav: false },
+  { id: "insulin", label: "Insulin Log", icon: Syringe, inNav: false },
+  { id: "orders", label: "Treatment Settings", icon: SlidersHorizontal, inNav: true },
+  { id: "messages", label: "Messages", icon: MessageSquare, inNav: true },
 ];
+const DRILL_DOWN = ["chart", "insulin"];
 
 function initials(name?: string): string {
   if (!name) return "?";
@@ -164,9 +168,10 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {TABS.map((item) => {
+          {TABS.filter((t) => t.inNav).map((item) => {
             const Icon = item.icon;
-            const isActive = current === item.id;
+            const isActive =
+              current === item.id || (item.id === "overview" && DRILL_DOWN.includes(current));
             return (
               <button
                 key={item.id}
@@ -215,6 +220,14 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
 
       <main className="flex-1 overflow-y-auto bg-background">
         <div className="max-w-[1600px] mx-auto p-5 lg:p-6 space-y-5">
+          {DRILL_DOWN.includes(current) && (
+            <button
+              onClick={() => setLocation(`/patient/${detail.accessCode}/overview`)}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to Overview
+            </button>
+          )}
           <PatientHeader snapshot={detail.snapshot} onRefresh={refetch} refreshing={isFetching} />
           <div key={current} className="animate-fade-in">
             {current === "overview" && (
