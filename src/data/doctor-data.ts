@@ -3,6 +3,7 @@ import {
   useGetPatientData,
   useLinkDoctorPatient,
   useListDoctorLinkedPatients,
+  useUnlinkDoctorPatient,
 } from "@doctor-portal/api-client-react";
 import type {
   DoctorLinkedPatient,
@@ -137,6 +138,35 @@ export function useLinkPatient(): {
       }
     },
     [link],
+  );
+  return { mutate, isPending, error };
+}
+
+export function useUnlinkPatient(): {
+  mutate: (accessCode: string) => Promise<void>;
+  isPending: boolean;
+  error: Error | null;
+} {
+  const unlink = useUnlinkDoctorPatient();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const mutate = useCallback(
+    async (accessCode: string) => {
+      setIsPending(true);
+      setError(null);
+      try {
+        // Soft-unlink: revokes this doctor's link only. The patient's account and data stay in
+        // Glucose Guardian and can be re-linked later with the same Doctor Code.
+        await unlink.mutateAsync({ accessCode });
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error("Could not remove patient.");
+        setError(err);
+        throw err;
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [unlink],
   );
   return { mutate, isPending, error };
 }

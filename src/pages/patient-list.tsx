@@ -12,6 +12,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
 import { useSession } from "@/auth/use-session";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +21,12 @@ import { Input } from "@/components/ui/input";
 import { formatTime } from "@/lib/utils";
 import { computeMetrics, formatAge, STATUS_META, type GlucoseStatus } from "@/lib/glucose-metrics";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
-import { useDoctorPatients, useLinkPatient, usePatientSnapshot } from "@/data/doctor-data";
+import {
+  useDoctorPatients,
+  useLinkPatient,
+  useUnlinkPatient,
+  usePatientSnapshot,
+} from "@/data/doctor-data";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
@@ -75,7 +81,15 @@ function TrendArrow({ trend, className = "w-4 h-4" }: { trend: string; className
   }
 }
 
-function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: () => void }) {
+function PatientCard({
+  entry,
+  onOpen,
+  onRemove,
+}: {
+  entry: DoctorLinkedPatient;
+  onOpen: () => void;
+  onRemove: () => void;
+}) {
   const { snapshot, isLoading, error } = usePatientSnapshot(entry.accessCode);
   const m = snapshot ? computeMetrics(snapshot) : null;
   const profile = snapshot?.profile;
@@ -89,10 +103,11 @@ function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: ()
   const accent = m?.latest && !stale ? ACCENT[status!] : "border-l-border";
 
   return (
-    <button onClick={onOpen} className="w-full text-left" style={{ order }}>
-      <div
-        className={`bg-card border border-border border-l-4 ${accent} rounded-2xl p-4 flex items-center gap-4 hover:border-primary/40 transition-colors`}
-      >
+    <div
+      style={{ order }}
+      className={`bg-card border border-border border-l-4 ${accent} rounded-2xl flex items-center hover:border-primary/40 transition-colors`}
+    >
+      <button onClick={onOpen} className="flex items-center gap-4 flex-1 min-w-0 p-4 text-left">
         <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-display font-bold shrink-0">
           {initials(name)}
         </div>
@@ -146,8 +161,16 @@ function PatientCard({ entry, onOpen }: { entry: DoctorLinkedPatient; onOpen: ()
           <span className="text-xs text-muted-foreground shrink-0">No data</span>
         )}
         <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-      </div>
-    </button>
+      </button>
+      <button
+        onClick={onRemove}
+        title="Remove from your list"
+        aria-label={`Remove ${name} from your list`}
+        className="p-2 mr-3 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
   );
 }
 
@@ -160,9 +183,11 @@ export function PatientList() {
 
   const { data: patients, refetch } = useDoctorPatients();
   const { mutate: linkPatient, isPending } = useLinkPatient();
+  const { mutate: unlinkPatient, isPending: isUnlinking } = useUnlinkPatient();
   const [code, setCode] = useState("");
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [removing, setRemoving] = useState<DoctorLinkedPatient | null>(null);
 
   const q = query.trim().toLowerCase();
   const visible = patients.filter(
@@ -179,6 +204,22 @@ export function PatientList() {
       setCode("");
     } catch (err) {
       setLinkMsg(err instanceof Error ? err.message : "Could not link patient.");
+    }
+  }
+
+  async function handleRemove() {
+    if (!removing) return;
+    const p = removing;
+    try {
+      await unlinkPatient(p.accessCode);
+      setRemoving(null);
+      refetch();
+      setLinkMsg(
+        `Removed ${p.displayName ?? p.accessCode} from your list. Re-link anytime with code ${p.accessCode}.`,
+      );
+    } catch (err) {
+      setRemoving(null);
+      setLinkMsg(err instanceof Error ? err.message : "Could not remove patient.");
     }
   }
 
@@ -280,11 +321,44 @@ export function PatientList() {
                 key={entry.accessCode}
                 entry={entry}
                 onOpen={() => setLocation(`/patient/${entry.accessCode}/overview`)}
+                onRemove={() => setRemoving(entry)}
               />
             ))
           )}
         </section>
       </main>
+
+      {removing && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={() => !isUnlinking && setRemoving(null)}
+        >
+          <div
+            className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-11 h-11 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+              <Trash2 className="w-5 h-5 text-destructive" />
+            </div>
+            <h2 className="text-lg font-display font-bold text-foreground">
+              Remove {removing.displayName ?? removing.accessCode} from your list?
+            </h2>
+            <p className="text-sm text-muted-foreground mt-2">
+              This removes the patient from your portal only. Their account and data stay in Glucose
+              Guardian — you can re-link anytime with their Doctor Code{" "}
+              <span className="font-mono text-foreground">{removing.accessCode}</span>.
+            </p>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => setRemoving(null)} disabled={isUnlinking}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleRemove} disabled={isUnlinking}>
+                {isUnlinking ? "Removing…" : "Remove patient"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
