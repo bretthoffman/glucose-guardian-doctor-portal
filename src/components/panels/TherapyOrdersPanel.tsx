@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +76,12 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const { mutate, isPending, error } = useProposeOrder();
 
+  // Track server state: when the caregiver approves/declines in the app, the pending banner
+  // clears (and the decision line below updates) on the next data refresh.
+  useEffect(() => {
+    setProposed(detail.proposedOrder);
+  }, [detail.proposedOrder]);
+
   const hasPending = !!proposed;
   const warnings = {
     carbRatio: warnFor("carbRatio", carbRatio),
@@ -152,6 +158,24 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
           <ValueRow label="Target" value={active?.targetGlucose} unit="mg/dL" />
         </CardContent>
       </Card>
+
+      {!hasPending && detail.lastDecision && (
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          {detail.lastDecision.status === "approved" ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+              The caregiver approved your last proposed change on{" "}
+              {formatDate(detail.lastDecision.decidedAt)} at {formatTime(detail.lastDecision.decidedAt)}.
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+              The caregiver declined your last proposed change on{" "}
+              {formatDate(detail.lastDecision.decidedAt)} at {formatTime(detail.lastDecision.decidedAt)}.
+            </>
+          )}
+        </p>
+      )}
 
       {!detail.canPrescribe ? (
         <div className="rounded-xl border border-border bg-secondary/30 p-4 flex items-start gap-3">

@@ -70,6 +70,12 @@ export interface PatientDetail {
   activeOrder?: TherapyOrder;
   /** A change awaiting caregiver confirmation, if any. */
   proposedOrder?: TherapyOrder;
+  /** Outcome of the most recent proposal (present once the caregiver has decided). */
+  lastDecision?: {
+    proposalId: string;
+    status: "approved" | "declined";
+    decidedAt: string;
+  };
 }
 
 /** Result shape shared by the data hooks — mirrors TanStack/Convex query results. */

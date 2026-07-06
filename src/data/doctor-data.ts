@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ApiError,
+  customFetch,
   useGetPatientData,
   useLinkDoctorPatient,
   useListDoctorLinkedPatients,
@@ -17,7 +19,7 @@ import type {
   QueryResult,
   TherapyOrder,
 } from "./contracts";
-import { USE_MOCK_DATA, mockMessages, mockProposeOrder, mockSendMessage } from "./mock";
+import { USE_MOCK_DATA, mockMessages, mockSendMessage } from "./mock";
 import { normalizeOrgName, searchOrganizations } from "./organizations";
 import type { MockOrganization } from "./mock";
 /**
@@ -50,9 +52,47 @@ export function usePatientSnapshot(accessCode: string): {
   };
 }
 
+/** Server-side therapy proposal/decision fields (present once the comms backend is deployed). */
+interface ServerTherapyProposal {
+  id: string;
+  proposedAt: string;
+  proposedByDoctorId: string;
+  proposedByName: string;
+  note: string;
+  carbRatio?: number;
+  correctionFactor?: number;
+  targetGlucose?: number;
+}
+interface ServerTherapyDecision {
+  proposalId: string;
+  status: "approved" | "declined";
+  decidedAt: string;
+}
+type SnapshotWithOrders = PatientSnapshot & {
+  therapyProposal?: ServerTherapyProposal | null;
+  therapyDecision?: ServerTherapyDecision | null;
+};
+
+function proposalToOrder(p: ServerTherapyProposal, patientId: string): TherapyOrder {
+  return {
+    id: p.id,
+    patientId,
+    version: 0,
+    status: "proposed",
+    proposedByDoctorId: p.proposedByDoctorId,
+    proposedByName: p.proposedByName,
+    proposedAt: p.proposedAt,
+    note: p.note,
+    carbRatio: p.carbRatio,
+    correctionFactor: p.correctionFactor,
+    targetGlucose: p.targetGlucose,
+  };
+}
+
 function snapshotToDetail(accessCode: string, snapshot: PatientSnapshot): PatientDetail {
   const p = snapshot.profile;
   const a = snapshot.alertPreferences;
+  const s = snapshot as SnapshotWithOrders;
   return {
     patientId: accessCode,
     accessCode,
@@ -79,6 +119,8 @@ function snapshotToDetail(accessCode: string, snapshot: PatientSnapshot): Patien
           }
         : undefined,
     },
+    proposedOrder: s.therapyProposal ? proposalToOrder(s.therapyProposal, accessCode) : undefined,
+    lastDecision: s.therapyDecision ?? undefined,
   };
 }
 
@@ -205,10 +247,40 @@ function useLocalMutation<TInput, TResult>(
 }
 
 export function useProposeOrder(): Mutation<ProposeOrderInput, TherapyOrder> {
-  // Local for now — writing a ratio change back to the patient app needs a backend endpoint
-  // (DOCTOR_PORTAL_CANONICAL_BACKEND_SPEC.md therapyOrders.propose). The UI shows real current
-  // settings; the proposed change is held client-side until that endpoint exists.
-  const run = useCallback((input: ProposeOrderInput) => mockProposeOrder(input), []);
+  // Real proposal: POST /api/doctor/patient/:code/orders stores it server-side; the caregiver
+  // approves or declines it in the Glucose Guardian app (the approval card arrives on the app's
+  // next sync). patientId here is the patient's access code.
+  const run = useCallback(async (input: ProposeOrderInput) => {
+    try {
+      const proposal = await customFetch<ServerTherapyProposal>(
+        `/api/doctor/patient/${encodeURIComponent(input.patientId)}/orders`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            carbRatio: input.values.carbRatio,
+            correctionFactor: input.values.correctionFactor,
+            targetGlucose: input.values.targetGlucose,
+            note: input.note,
+          }),
+        },
+      );
+      return proposalToOrder(proposal, input.patientId);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 404 || e.status === 405) {
+          throw new Error(
+            "The backend doesn't accept treatment proposals yet — the server update is pending deployment.",
+          );
+        }
+        if (e.status === 409) {
+          throw new Error(
+            "A change is already awaiting caregiver confirmation. You can propose another once it's resolved.",
+          );
+        }
+      }
+      throw e instanceof Error ? e : new Error("Could not propose the change.");
+    }
+  }, []);
   return useLocalMutation(run);
 }
 
