@@ -6,6 +6,7 @@ import type {
   DoctorMessage,
 } from "@doctor-portal/api-client-react";
 import type { DoctorProfile, Organization } from "@/auth/use-current-doctor";
+import { ORGANIZATIONS, type DirectoryOrganization } from "./organizations";
 import type {
   DoctorPatientListItem,
   PatientDetail,
@@ -39,23 +40,15 @@ export const MOCK_ORG: Organization = {
   slug: "musc",
 };
 
-/** Organization with the work-email domains that auto-provision into it (decision: domain match). */
-export interface MockOrganization extends Organization {
-  allowedDomains: string[];
-}
+/**
+ * Organization directory entry. The directory itself is real data (curated U.S. health systems
+ * in src/data/organizations.ts, plus the server-side CMS/NPPES directory) — only the name
+ * `MockOrganization` is kept for compatibility with existing imports.
+ */
+export type MockOrganization = DirectoryOrganization;
 
 export function mockOrganizations(): MockOrganization[] {
-  return [
-    { id: "org_musc", name: "MUSC Health", slug: "musc", allowedDomains: ["musc.edu"] },
-    { id: "org_wakemed", name: "WakeMed", slug: "wakemed", allowedDomains: ["wakemed.org"] },
-    { id: "org_roper", name: "Roper St. Francis", slug: "roper", allowedDomains: ["rsfh.com"] },
-    {
-      id: "org_duke",
-      name: "Duke Health",
-      slug: "duke",
-      allowedDomains: ["duke.edu", "dukehealth.org"],
-    },
-  ];
+  return ORGANIZATIONS;
 }
 
 const HOUR = 60 * 60 * 1000;

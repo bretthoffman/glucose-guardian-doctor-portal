@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Building2, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useOrganizationSearch } from "@/data/doctor-data";
+import type { MockOrganization } from "@/data/mock";
 
 /**
- * Search-only organization picker. No pre-listed orgs — results appear as you type, from the
- * directory search (a small static list in dev; a real server-side directory in production).
- * Used by the dev onboarding flow and the production org-first login.
+ * Search-only organization picker. Results appear as you type — instantly from the curated
+ * U.S. health-system directory, augmented by the server-side CMS/NPPES directory when deployed.
  */
-export function OrgList({ onSelect }: { onSelect: (id: string) => void }) {
+export function OrgList({ onSelect }: { onSelect: (org: MockOrganization) => void }) {
   const [q, setQ] = useState("");
   const query = q.trim();
   const results = useOrganizationSearch(q);
@@ -36,22 +36,29 @@ export function OrgList({ onSelect }: { onSelect: (id: string) => void }) {
         </p>
       ) : (
         <div className="space-y-2">
-          {results.map((o) => (
-            <button
-              key={o.id}
-              onClick={() => onSelect(o.id)}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-secondary/40 transition-colors text-left"
-            >
-              <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                <Building2 className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground">{o.name}</p>
-                <p className="text-xs text-muted-foreground">@{o.allowedDomains[0]}</p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </button>
-          ))}
+          {results.map((o) => {
+            const place = [o.city, o.state].filter(Boolean).join(", ");
+            return (
+              <button
+                key={o.id}
+                onClick={() => onSelect(o)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/40 hover:bg-secondary/40 transition-colors text-left"
+              >
+                <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground truncate">{o.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {o.allowedDomains[0] ? `@${o.allowedDomains[0]}` : ""}
+                    {o.allowedDomains[0] && place ? " · " : ""}
+                    {place}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </button>
+            );
+          })}
         </div>
       )}
     </>

@@ -17,7 +17,8 @@ import type {
   QueryResult,
   TherapyOrder,
 } from "./contracts";
-import { USE_MOCK_DATA, mockMessages, mockOrganizations, mockProposeOrder, mockSendMessage } from "./mock";
+import { USE_MOCK_DATA, mockMessages, mockProposeOrder, mockSendMessage } from "./mock";
+import { normalizeOrgName, searchOrganizations } from "./organizations";
 import type { MockOrganization } from "./mock";
 /**
  * Patient data comes from the live Glucose Guardian backend, authenticated with the doctor's
@@ -237,12 +238,72 @@ export function useSeededMessages(accessCode: string): {
   return { messages, append };
 }
 
+interface RemoteOrg {
+  id: string;
+  name: string;
+  domains?: string[];
+  city?: string;
+  state?: string;
+}
+
+/**
+ * Organization directory search. Two sources, one search box:
+ *  - Curated local directory (instant, offline, ~230 major U.S. systems).
+ *  - Server-side directory at GET /api/doctor/organizations (CMS/NPPES import — the long tail),
+ *    debounced as the doctor types. If the endpoint isn't deployed or fails, local results
+ *    stand alone, so this never breaks the sign-in flow.
+ * Results are merged and deduped by normalized name + state, curated entries first.
+ */
 export function useOrganizationSearch(query: string): MockOrganization[] {
-  return useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return mockOrganizations().filter(
-      (o) => o.name.toLowerCase().includes(q) || o.allowedDomains.some((d) => d.includes(q)),
-    );
+  const local = useMemo(() => searchOrganizations(query), [query]);
+  const [remote, setRemote] = useState<MockOrganization[]>([]);
+
+  useEffect(() => {
+    const q = query.trim();
+    setRemote([]);
+    if (q.length < 2) return;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+          const res = await fetch(
+            `${base}/api/doctor/organizations?q=${encodeURIComponent(q)}&limit=12`,
+            { signal: ctrl.signal },
+          );
+          if (!res.ok) return;
+          const body = (await res.json()) as { organizations?: RemoteOrg[] };
+          setRemote(
+            (body.organizations ?? []).map((o) => ({
+              id: o.id,
+              name: o.name,
+              slug: o.id,
+              allowedDomains: o.domains ?? [],
+              city: o.city,
+              state: o.state,
+            })),
+          );
+        } catch {
+          /* offline or directory not deployed yet — local results already cover it */
+        }
+      })();
+    }, 250);
+    return () => {
+      ctrl.abort();
+      clearTimeout(timer);
+    };
   }, [query]);
+
+  return useMemo(() => {
+    const seen = new Set<string>();
+    const out: MockOrganization[] = [];
+    for (const o of [...local, ...remote]) {
+      const key = `${normalizeOrgName(o.name)}|${(o.state ?? "").toUpperCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(o);
+      if (out.length >= 12) break;
+    }
+    return out;
+  }, [local, remote]);
 }

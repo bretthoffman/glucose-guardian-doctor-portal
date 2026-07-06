@@ -20,6 +20,9 @@ export type SessionStep = "choose_org" | "authenticate" | "set_pin" | "locked" |
 
 interface SessionState {
   orgId?: string;
+  /** Persisted at pick time so orgs from the server-side directory resolve after reload. */
+  orgName?: string;
+  orgDomains?: string[];
   pinHash?: string;
   sharedDevice: boolean;
   pinSkipped: boolean;
@@ -29,7 +32,7 @@ interface SessionState {
 }
 
 export interface SessionActions {
-  chooseOrg: (orgId: string) => void;
+  chooseOrg: (org: { id: string; name?: string; allowedDomains?: string[] }) => void;
   resetOrg: () => void;
   authenticate: (doctor: DoctorProfile, token: string, expiresAt: number) => void;
   setPin: (pin: string) => void;
@@ -74,6 +77,8 @@ function loadState(): SessionState {
   const session = loadDoctorSession();
   return {
     orgId: device.orgId as string | undefined,
+    orgName: device.orgName as string | undefined,
+    orgDomains: Array.isArray(device.orgDomains) ? (device.orgDomains as string[]) : undefined,
     pinHash: device.pinHash as string | undefined,
     sharedDevice: Boolean(device.sharedDevice),
     pinSkipped: Boolean(device.pinSkipped),
@@ -89,6 +94,8 @@ function persist(s: SessionState): void {
       DEVICE_KEY,
       JSON.stringify({
         orgId: s.orgId,
+        orgName: s.orgName,
+        orgDomains: s.orgDomains,
         pinHash: s.pinHash,
         sharedDevice: s.sharedDevice,
         pinSkipped: s.pinSkipped,
@@ -132,8 +139,9 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo<SessionActions>(
     () => ({
-      chooseOrg: (orgId) => update({ orgId }),
-      resetOrg: () => update({ orgId: undefined }),
+      chooseOrg: (org) =>
+        update({ orgId: org.id, orgName: org.name, orgDomains: org.allowedDomains }),
+      resetOrg: () => update({ orgId: undefined, orgName: undefined, orgDomains: undefined }),
       authenticate: (doctor, token, expiresAt) => {
         storeDoctorSession({ token, expiresAt, doctor });
         update({ doctor, locked: false, attempts: 0 });
@@ -180,7 +188,20 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
   }, [canLock, lock]);
 
   const value = useMemo<MockSessionValue>(() => {
-    const org = mockOrganizations().find((o) => o.id === state.orgId);
+    // Prefer the org identity captured at pick time (covers server-directory orgs that aren't in
+    // the bundled list); fall back to the curated list for devices stored before orgName existed.
+    const fromList = mockOrganizations().find((o) => o.id === state.orgId);
+    const org: MockOrganization | undefined = state.orgId
+      ? (fromList ??
+        (state.orgName
+          ? {
+              id: state.orgId,
+              name: state.orgName,
+              slug: state.orgId,
+              allowedDomains: state.orgDomains ?? [],
+            }
+          : undefined))
+      : undefined;
     return {
       step: deriveStep(state),
       org,
