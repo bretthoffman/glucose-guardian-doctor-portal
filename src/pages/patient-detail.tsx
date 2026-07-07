@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { PatientAvatar } from "@/components/PatientAvatar";
 import { PatientHeader } from "@/components/PatientHeader";
 import { ProductTour, TOUR_EVENT, type TourStep } from "@/components/ProductTour";
 import { computeMetrics, STATUS_META, formatAge } from "@/lib/glucose-metrics";
@@ -195,9 +196,11 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
             title="Switch patient"
             className="w-full flex items-center gap-2.5 p-2 rounded-xl border border-border hover:bg-secondary/50 transition-colors text-left"
           >
-            <div className="w-8 h-8 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary text-xs font-bold shrink-0">
-              {initials(name)}
-            </div>
+            <PatientAvatar
+              name={name}
+              photoDataUri={detail.snapshot.profile.photoDataUri}
+              className="w-8 h-8 text-xs"
+            />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground truncate">{name}</p>
               <p className="text-[11px] text-muted-foreground truncate">

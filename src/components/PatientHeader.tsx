@@ -2,6 +2,7 @@ import { AlertTriangle, Clock, RefreshCw } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatDate, formatTime } from "@/lib/utils";
 import { computeMetrics, formatAge, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
+import { PatientAvatar } from "@/components/PatientAvatar";
 
 function initials(name: string): string {
   return (
@@ -46,9 +47,11 @@ export function PatientHeader({
     <div className="bg-card border border-border rounded-2xl p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="w-12 h-12 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-display font-bold shrink-0">
-            {initials(p.childName)}
-          </div>
+          <PatientAvatar
+            name={p.childName}
+            photoDataUri={p.photoDataUri}
+            className="w-12 h-12 text-base"
+          />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-display font-bold text-foreground">{p.childName}</h1>

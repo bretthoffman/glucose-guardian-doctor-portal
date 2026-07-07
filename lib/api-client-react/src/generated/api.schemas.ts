@@ -248,6 +248,8 @@ export interface PatientProfile {
   carbRatio?: number;
   targetGlucose?: number;
   correctionFactor?: number;
+  /** Small (~192px JPEG) base64 data-URI of the patient's profile photo, synced from the app. */
+  photoDataUri?: string;
 }
 
 export type PatientSnapshotAlertPreferences = {

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatTime } from "@/lib/utils";
 import { computeMetrics, formatAge, STATUS_META, type GlucoseStatus } from "@/lib/glucose-metrics";
+import { PatientAvatar } from "@/components/PatientAvatar";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import {
   useDoctorPatients,
@@ -108,9 +109,7 @@ function PatientCard({
       className={`bg-card border border-border border-l-4 ${accent} rounded-2xl flex items-center hover:border-primary/40 transition-colors`}
     >
       <button onClick={onOpen} className="flex items-center gap-4 flex-1 min-w-0 p-4 text-left">
-        <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-display font-bold shrink-0">
-          {initials(name)}
-        </div>
+        <PatientAvatar name={name} photoDataUri={profile?.photoDataUri} className="w-11 h-11" />
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
