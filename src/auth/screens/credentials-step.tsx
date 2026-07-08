@@ -8,11 +8,27 @@ import { useDoctorSession } from "../mock-session";
 import { hashPassword } from "../password";
 import { AuthShell } from "./auth-shell";
 
-export function CredentialsStep() {
+/**
+ * Email + password form for both entry points. `mode` is controlled by the auth flow:
+ * "signin" is the front door; "create" is reached only after picking an organization.
+ */
+export function CredentialsStep({
+  mode,
+  onCreateAccount,
+  onSignIn,
+  onChangeOrg,
+}: {
+  mode: "create" | "signin";
+  /** Sign-in mode: user wants to create an account (routes to the org picker). */
+  onCreateAccount?: () => void;
+  /** Create mode: user already has an account (back to sign-in). */
+  onSignIn?: () => void;
+  /** Create mode: user wants to pick a different organization. */
+  onChangeOrg?: () => void;
+}) {
   const { org, actions } = useDoctorSession();
   const register = useDoctorAuthRegister();
   const login = useDoctorAuthLogin();
-  const [mode, setMode] = useState<"create" | "signin">("create");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -70,7 +86,13 @@ export function CredentialsStep() {
   return (
     <AuthShell
       title={mode === "create" ? "Create your account" : "Sign in"}
-      subtitle={org ? `${org.name} · work email` : undefined}
+      subtitle={
+        mode === "create"
+          ? org
+            ? `${org.name} · work email`
+            : undefined
+          : "Welcome back — use your work email."
+      }
     >
       <form onSubmit={submit} className="space-y-4">
         {mode === "create" && (
@@ -152,21 +174,35 @@ export function CredentialsStep() {
       </form>
 
       <div className="mt-4 flex items-center justify-between text-sm">
-        <button
-          onClick={() => {
-            setErr(null);
-            setMode(mode === "create" ? "signin" : "create");
-          }}
-          className="text-primary hover:underline"
-        >
-          {mode === "create" ? "Already have an account? Sign in" : "Create an account"}
-        </button>
-        <button
-          onClick={() => actions.resetOrg()}
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1"
-        >
-          <Building2 className="w-3.5 h-3.5" /> Change org
-        </button>
+        {mode === "create" ? (
+          <>
+            <button
+              onClick={() => {
+                setErr(null);
+                onSignIn?.();
+              }}
+              className="text-primary hover:underline"
+            >
+              Already have an account? Sign in
+            </button>
+            <button
+              onClick={() => onChangeOrg?.()}
+              className="text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <Building2 className="w-3.5 h-3.5" /> Change org
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => {
+              setErr(null);
+              onCreateAccount?.();
+            }}
+            className="text-primary hover:underline"
+          >
+            New here? Create an account
+          </button>
+        )}
       </div>
     </AuthShell>
   );

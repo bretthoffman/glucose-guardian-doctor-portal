@@ -12,11 +12,12 @@ import { mockOrganizations, type MockOrganization } from "@/data/mock";
 import { clearDoctorSession, loadDoctorSession, storeDoctorSession } from "./doctor-auth";
 
 /**
- * Doctor session for the portal: organization picker → real account sign-in (backend doctor
- * accounts, Bearer token) → optional device PIN lock. The token/doctor live in doctor-auth
- * (sessionStorage); org + PIN preferences live on the device (localStorage).
+ * Doctor session for the portal: sign-in first (backend doctor accounts, Bearer token) → optional
+ * device PIN lock. Creating an account routes through the organization picker inside the
+ * `authenticate` step (see MockAuthFlow) — returning doctors never see it. The token/doctor live
+ * in doctor-auth (sessionStorage); org + PIN preferences live on the device (localStorage).
  */
-export type SessionStep = "choose_org" | "authenticate" | "set_pin" | "locked" | "ready";
+export type SessionStep = "authenticate" | "set_pin" | "locked" | "ready";
 
 interface SessionState {
   orgId?: string;
@@ -108,7 +109,7 @@ function persist(s: SessionState): void {
 }
 
 function deriveStep(s: SessionState): SessionStep {
-  if (!s.orgId) return "choose_org";
+  // Sign-in comes first; the org is picked inside the create-account path, not as a gate.
   if (!s.doctor) return "authenticate";
   if (s.locked && s.pinHash) return "locked";
   if (!s.pinHash && !s.pinSkipped && !s.sharedDevice) return "set_pin";
