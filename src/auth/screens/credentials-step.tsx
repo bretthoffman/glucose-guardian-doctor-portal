@@ -67,6 +67,12 @@ export function CredentialsStep({
         await register.mutateAsync({
           data: { email: at, passwordHash, displayName: name.trim(), institution: org?.name },
         });
+        // Brand-new account: queue the one-time guided tour (sign-ins never auto-run it).
+        try {
+          sessionStorage.setItem("gg_tour_pending", "1");
+        } catch {
+          /* ignore */
+        }
       }
       const res = await login.mutateAsync({ data: { email: at, passwordHash } });
       actions.authenticate(res.doctor, res.token, res.expiresAt);

@@ -25,8 +25,6 @@ interface SessionState {
   orgName?: string;
   orgDomains?: string[];
   pinHash?: string;
-  sharedDevice: boolean;
-  pinSkipped: boolean;
   doctor?: DoctorProfile;
   locked: boolean;
   attempts: number;
@@ -37,7 +35,6 @@ export interface SessionActions {
   resetOrg: () => void;
   authenticate: (doctor: DoctorProfile, token: string, expiresAt: number) => void;
   setPin: (pin: string) => void;
-  skipPin: (sharedDevice: boolean) => void;
   lock: () => void;
   unlock: (pin: string) => boolean;
   signOut: () => void;
@@ -81,8 +78,6 @@ function loadState(): SessionState {
     orgName: device.orgName as string | undefined,
     orgDomains: Array.isArray(device.orgDomains) ? (device.orgDomains as string[]) : undefined,
     pinHash: device.pinHash as string | undefined,
-    sharedDevice: Boolean(device.sharedDevice),
-    pinSkipped: Boolean(device.pinSkipped),
     doctor: session?.doctor,
     locked: Boolean(flags.locked),
     attempts: Number(flags.attempts) || 0,
@@ -98,8 +93,6 @@ function persist(s: SessionState): void {
         orgName: s.orgName,
         orgDomains: s.orgDomains,
         pinHash: s.pinHash,
-        sharedDevice: s.sharedDevice,
-        pinSkipped: s.pinSkipped,
       }),
     );
     sessionStorage.setItem(FLAGS_KEY, JSON.stringify({ locked: s.locked, attempts: s.attempts }));
@@ -112,7 +105,9 @@ function deriveStep(s: SessionState): SessionStep {
   // Sign-in comes first; the org is picked inside the create-account path, not as a gate.
   if (!s.doctor) return "authenticate";
   if (s.locked && s.pinHash) return "locked";
-  if (!s.pinHash && !s.pinSkipped && !s.sharedDevice) return "set_pin";
+  // A 4-digit device PIN is required — no skip. Devices that stored a "skipped" preference under
+  // the old flow are asked to set one on their next sign-in.
+  if (!s.pinHash) return "set_pin";
   return "ready";
 }
 
@@ -147,8 +142,7 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
         storeDoctorSession({ token, expiresAt, doctor });
         update({ doctor, locked: false, attempts: 0 });
       },
-      setPin: (pin) => update({ pinHash: hashPin(pin), pinSkipped: false, locked: false }),
-      skipPin: (sharedDevice) => update({ pinSkipped: true, sharedDevice }),
+      setPin: (pin) => update({ pinHash: hashPin(pin), locked: false }),
       lock,
       unlock: (pin) => {
         let ok = false;

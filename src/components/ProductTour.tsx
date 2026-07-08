@@ -10,6 +10,8 @@ export interface TourStep {
 }
 
 const SEEN_KEY = "gg_tour_seen";
+/** Set at account creation — the tour only auto-runs for brand-new accounts, never on sign-in. */
+const PENDING_KEY = "gg_tour_pending";
 /** Fire `window.dispatchEvent(new Event(TOUR_EVENT))` to (re)launch the tour. */
 export const TOUR_EVENT = "gg:start-tour";
 
@@ -33,16 +35,18 @@ export function ProductTour({
   const [rect, setRect] = useState<DOMRect | null>(null);
   const started = useRef(false);
 
-  // Auto-start once.
+  // Auto-start only for brand-new accounts (flag set at registration), and only once.
   useEffect(() => {
     if (!enabled || started.current) return;
+    let pending = false;
     let seen = false;
     try {
+      pending = !!sessionStorage.getItem(PENDING_KEY);
       seen = !!localStorage.getItem(SEEN_KEY);
     } catch {
       /* ignore */
     }
-    if (!seen) {
+    if (pending && !seen) {
       started.current = true;
       setI(0);
       setActive(true);
@@ -102,6 +106,7 @@ export function ProductTour({
   const finish = () => {
     try {
       localStorage.setItem(SEEN_KEY, "1");
+      sessionStorage.removeItem(PENDING_KEY);
     } catch {
       /* ignore */
     }
