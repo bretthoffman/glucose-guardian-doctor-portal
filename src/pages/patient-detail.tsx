@@ -19,6 +19,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   HelpCircle,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -32,6 +33,7 @@ import { InsulinPanel } from "@/components/panels/InsulinPanel";
 import { TherapyOrdersPanel } from "@/components/panels/TherapyOrdersPanel";
 import { MessagesPanel } from "@/components/panels/MessagesPanel";
 import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
+import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
@@ -125,19 +127,6 @@ const TOUR_STEPS: TourStep[] = [
   },
 ];
 
-function initials(name?: string): string {
-  if (!name) return "?";
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((p) => p[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "?"
-  );
-}
-
 function typeLabel(t?: string): string {
   return t === "type1" ? "Type 1" : t === "type2" ? "Type 2" : "Other";
 }
@@ -175,6 +164,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   const decision = detail?.lastDecision;
   const accessCodeVal = detail?.accessCode;
   const [decisionSeenBump, setDecisionSeenBump] = useState(0);
+  const [profileOpen, setProfileOpen] = useState(false);
   const notificationUnseen = useMemo(
     () =>
       decision && accessCodeVal && doctor?.id
@@ -307,13 +297,25 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
         <div className="p-3 border-t border-border space-y-1">
           {doctor && (
             <div className="flex items-center gap-2.5 px-2 py-2">
-              <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-xs font-bold text-foreground shrink-0">
-                {initials(doctor.displayName)}
-              </div>
-              <div className="min-w-0">
+              <PatientAvatar
+                name={doctor.displayName}
+                photoDataUri={doctor.photoDataUri}
+                className="w-8 h-8 text-xs"
+              />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground truncate">{doctor.displayName}</p>
-                <p className="text-[11px] text-muted-foreground truncate">{doctor.email}</p>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {doctor.specialty || doctor.email}
+                </p>
               </div>
+              <button
+                onClick={() => setProfileOpen(true)}
+                title="Edit your profile"
+                aria-label="Edit your profile"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
             </div>
           )}
           <button
@@ -369,6 +371,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
         </div>
       </main>
       <ProductTour steps={TOUR_STEPS} enabled={current === "overview"} onNavigate={navigateTab} />
+      <DoctorProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }

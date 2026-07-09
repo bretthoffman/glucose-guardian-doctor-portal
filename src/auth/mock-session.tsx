@@ -44,6 +44,8 @@ export interface SessionActions {
   chooseOrg: (org: { id: string; name?: string; allowedDomains?: string[] }) => void;
   resetOrg: () => void;
   authenticate: (doctor: DoctorProfile, token: string, expiresAt: number) => void;
+  /** Merge changes into the signed-in doctor (e.g. after a profile edit) and re-persist the session. */
+  updateDoctor: (patch: Partial<DoctorProfile>) => void;
   setPin: (pin: string) => Promise<void>;
   lock: () => void;
   unlock: (pin: string) => Promise<boolean>;
@@ -169,6 +171,14 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
         storeDoctorSession({ token, expiresAt, doctor });
         update({ doctor, accountHasPin: doctor.hasPin, locked: false, attempts: 0 });
       },
+      updateDoctor: (patch) =>
+        setState((prev) => {
+          if (!prev.doctor) return prev;
+          const doctor = { ...prev.doctor, ...patch };
+          const s = loadDoctorSession();
+          if (s) storeDoctorSession({ token: s.token, expiresAt: s.expiresAt, doctor });
+          return { ...prev, doctor };
+        }),
       setPin: async (pin) => {
         const pinHash = hashPin(pin);
         // Persist to the account so the PIN follows the doctor to any device. Best-effort: if the

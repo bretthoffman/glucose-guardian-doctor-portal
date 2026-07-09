@@ -131,6 +131,10 @@ export interface DoctorProfile {
   title?: string;
   firstName?: string;
   lastName?: string;
+  /** Clinical specialty / position (e.g. "Pediatric Endocrinology"). */
+  specialty?: string;
+  /** Small base64 data-URI avatar the doctor uploaded in the portal. */
+  photoDataUri?: string;
   institution?: string;
   /** Whether the account has an account-level portal PIN set (drives set-PIN vs. unlock). */
   hasPin?: boolean;

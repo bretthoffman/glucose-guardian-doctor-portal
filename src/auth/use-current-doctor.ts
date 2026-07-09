@@ -6,7 +6,9 @@ export interface DoctorProfile {
   displayName: string;
   email: string;
   role: "doctor" | "org_admin";
+  title?: string;
   specialty?: string;
+  photoDataUri?: string;
 }
 
 export interface Organization {
@@ -33,7 +35,15 @@ export function useCurrentDoctor(): DoctorAccessState {
   if (d) {
     return {
       status: "active",
-      doctor: { id: d.doctorId, displayName: d.displayName, email: d.email, role: "doctor" },
+      doctor: {
+        id: d.doctorId,
+        displayName: d.displayName,
+        email: d.email,
+        role: "doctor",
+        title: d.title,
+        specialty: d.specialty,
+        photoDataUri: d.photoDataUri,
+      },
       organization: session?.org ?? { id: "", name: d.institution ?? "—", slug: "" },
     };
   }

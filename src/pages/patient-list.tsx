@@ -13,6 +13,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { useSession } from "@/auth/use-session";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +30,7 @@ import {
   usePatientSnapshot,
 } from "@/data/doctor-data";
 import { readDecision, isDecisionUnseen } from "@/data/notifications";
+import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
@@ -198,6 +200,7 @@ export function PatientList() {
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [removing, setRemoving] = useState<DoctorLinkedPatient | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const q = query.trim().toLowerCase();
   const visible = patients.filter(
@@ -252,12 +255,26 @@ export function PatientList() {
           </div>
           <div className="flex items-center gap-4">
             {doctor && (
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-foreground leading-tight">
-                  {doctor.displayName}
-                </p>
-                <p className="text-xs text-muted-foreground">{doctor.email}</p>
-              </div>
+              <button
+                onClick={() => setProfileOpen(true)}
+                title="Edit your profile"
+                className="flex items-center gap-2.5 rounded-xl px-2 py-1 hover:bg-secondary transition-colors"
+              >
+                <PatientAvatar
+                  name={doctor.displayName}
+                  photoDataUri={doctor.photoDataUri}
+                  className="w-8 h-8 text-xs"
+                />
+                <div className="text-left hidden sm:block">
+                  <p className="text-sm font-medium text-foreground leading-tight">
+                    {doctor.displayName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {doctor.specialty || doctor.email}
+                  </p>
+                </div>
+                <Settings className="w-4 h-4 text-muted-foreground shrink-0" />
+              </button>
             )}
             {canLock && (
               <Button variant="ghost" size="sm" onClick={lock}>
@@ -370,6 +387,8 @@ export function PatientList() {
           </div>
         </div>
       )}
+
+      <DoctorProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 }
