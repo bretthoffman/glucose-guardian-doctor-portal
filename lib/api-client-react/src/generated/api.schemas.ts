@@ -252,6 +252,8 @@ export interface CGMReading {
 export interface PatientProfile {
   childName: string;
   parentName?: string;
+  /** Caregiver phone, when the app captures + syncs it (optional; rendered only if present). */
+  caregiverPhone?: string;
   diabetesType: string;
   dateOfBirth: string;
   weightLbs?: number;
