@@ -24,6 +24,37 @@ import { useDoctorSession } from "@/auth/mock-session";
 
 const NO_TITLE = "none";
 const TITLE_OPTIONS = ["Dr.", "NP", "PA", "RN", "PharmD"] as const;
+
+// Map a leading honorific token to its canonical option so a legacy account (which only has a
+// combined displayName like "Dr. Alex Rivera") still prefills Title/First/Last.
+const TITLE_MAP: Record<string, string> = {
+  dr: "Dr.",
+  np: "NP",
+  pa: "PA",
+  rn: "RN",
+  pharmd: "PharmD",
+  md: "Dr.",
+  do: "Dr.",
+};
+
+function parseDisplayName(displayName?: string): {
+  title: string;
+  firstName: string;
+  lastName: string;
+} {
+  const tokens = (displayName || "").trim().split(/\s+/).filter(Boolean);
+  let title = "";
+  if (tokens.length > 1) {
+    const key = tokens[0].toLowerCase().replace(/\./g, "");
+    if (TITLE_MAP[key]) {
+      title = TITLE_MAP[key];
+      tokens.shift();
+    }
+  }
+  const firstName = tokens.length > 1 ? tokens.slice(0, -1).join(" ") : tokens[0] || "";
+  const lastName = tokens.length > 1 ? tokens[tokens.length - 1] : "";
+  return { title, firstName, lastName };
+}
 const SPECIALTY_SUGGESTIONS = [
   "Endocrinology",
   "Pediatric Endocrinology",
@@ -77,12 +108,14 @@ export function DoctorProfileDialog({
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Re-seed from the account each time the dialog opens.
+  // Re-seed from the account each time the dialog opens. Fall back to parsing the combined
+  // displayName so accounts predating the structured name/title fields still open pre-filled.
   useEffect(() => {
     if (open && doctor) {
-      setTitle(doctor.title || NO_TITLE);
-      setFirstName(doctor.firstName || "");
-      setLastName(doctor.lastName || "");
+      const parsed = parseDisplayName(doctor.displayName);
+      setTitle(doctor.title || parsed.title || NO_TITLE);
+      setFirstName(doctor.firstName || parsed.firstName);
+      setLastName(doctor.lastName || parsed.lastName);
       setSpecialty(doctor.specialty || "");
       setEmail(doctor.email || "");
       setPhoto(doctor.photoDataUri);
