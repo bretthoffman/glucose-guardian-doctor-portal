@@ -4,11 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Clock, Lock, Sliders, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Bell, Clock, Download, Lock, Sliders, CheckCircle2 } from "lucide-react";
 import { formatDate, formatTime } from "@/lib/utils";
 import type { PatientDetail, TherapyOrder, TherapyOrderValues } from "@/data/contracts";
 import { useProposeOrder } from "@/data/doctor-data";
 import { TreatmentTrends } from "@/components/TreatmentTrends";
+import {
+  computeMetrics,
+  detectPatterns,
+  zonesFromSnapshot,
+  STATUS_META,
+} from "@/lib/glucose-metrics";
 
 type FieldKey = "carbRatio" | "correctionFactor" | "targetGlucose";
 
@@ -67,7 +73,9 @@ function PendingBanner({ order }: { order: TherapyOrder }) {
   );
 }
 
-export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
+// ── Current Settings tab (active orders + propose-a-change form) ─────────────
+
+function CurrentSettingsTab({ detail }: { detail: PatientDetail }) {
   const active = detail.activeOrder;
   const [proposed, setProposed] = useState<TherapyOrder | undefined>(detail.proposedOrder);
   const [carbRatio, setCarbRatio] = useState(String(active?.carbRatio ?? ""));
@@ -121,18 +129,7 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div data-tour="treatment">
-        <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
-          <Sliders className="w-6 h-6 text-primary" />
-          Treatment settings
-        </h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          These settings drive dosing in the patient's app. Changes are proposed, then take effect
-          only after the caregiver confirms them.
-        </p>
-      </div>
-
+    <div className="space-y-5 max-w-3xl">
       {feedback && (
         <div className="rounded-xl border border-success/30 bg-success/10 p-3 flex items-center gap-2 text-success">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
@@ -177,8 +174,6 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
           )}
         </p>
       )}
-
-      <TreatmentTrends detail={detail} />
 
       {!detail.canPrescribe ? (
         <div className="rounded-xl border border-border bg-secondary/30 p-4 flex items-start gap-3">
@@ -263,6 +258,194 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ── Alerts & Recommendations tab ─────────────────────────────────────────────
+
+function AlertsRecommendationsTab({ detail }: { detail: PatientDetail }) {
+  const snapshot = detail.snapshot;
+  const zones = zonesFromSnapshot(snapshot);
+  const patterns = detectPatterns(snapshot);
+  const rows = [
+    { label: "Urgent High", range: `> ${zones.urgentHigh} mg/dL`, dot: STATUS_META.urgentHigh.dot },
+    { label: "High", range: `${zones.high}–${zones.urgentHigh} mg/dL`, dot: STATUS_META.high.dot },
+    { label: "Target Range", range: `${zones.low}–${zones.high} mg/dL`, dot: STATUS_META.target.dot },
+    { label: "Low", range: `${zones.urgentLow}–${zones.low} mg/dL`, dot: STATUS_META.low.dot },
+    { label: "Urgent Low", range: `< ${zones.urgentLow} mg/dL`, dot: STATUS_META.urgentLow.dot },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-4xl items-start">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-primary" /> Alert thresholds
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2.5">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <span className={`w-2 h-2 rounded-full ${r.dot}`} /> {r.label}
+              </span>
+              <span className="font-medium text-foreground">{r.range}</span>
+            </div>
+          ))}
+          <p className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+            Alert levels come from the patient's app settings and drive the zones on every chart.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-warning" /> Detected patterns & recommendations
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2.5">
+            {patterns.map((p) => (
+              <li key={p} className="flex items-start gap-2 text-sm text-foreground">
+                {p.startsWith("No concerning") ? (
+                  <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                )}
+                {p}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
+            Heuristics over the synced readings — informational, not a diagnosis.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── Export report ────────────────────────────────────────────────────────────
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function exportReport(detail: PatientDetail) {
+  const s = detail.snapshot;
+  const p = s.profile;
+  const m = computeMetrics(s);
+  const zones = zonesFromSnapshot(s);
+  const patterns = detectPatterns(s);
+  const active = detail.activeOrder;
+  const history = detail.settingsHistory ?? [];
+  const now = new Date();
+
+  const historyRows = history.length
+    ? [...history]
+        .reverse()
+        .map(
+          (h) =>
+            `<tr><td>${esc(formatDate(h.changedAt))}</td><td>${h.carbRatio ?? "—"} g/u</td><td>${h.correctionFactor ?? "—"} mg/dL</td><td>${h.targetGlucose ?? "—"} mg/dL</td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="4">No recorded changes yet.</td></tr>`;
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Treatment report — ${esc(p.childName)}</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:720px;margin:32px auto;padding:0 24px;font-size:14px;line-height:1.5}
+  h1{font-size:22px;margin:0 0 2px} h2{font-size:15px;margin:24px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
+  .muted{color:#666;font-size:12px} table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eee;font-size:13px} th{color:#666;font-weight:600}
+  .grid{display:flex;gap:24px;flex-wrap:wrap} .stat b{font-size:18px;display:block}
+</style></head><body>
+<h1>Treatment report — ${esc(p.childName)}</h1>
+<p class="muted">Generated ${esc(formatDate(now.toISOString()))} at ${esc(formatTime(now.toISOString()))} · Patient ID ${esc(detail.accessCode)} · DOB ${esc(p.dateOfBirth ? formatDate(p.dateOfBirth) : "—")}${p.parentName ? ` · Caregiver ${esc(p.parentName)}` : ""}</p>
+<h2>Current treatment settings</h2>
+<table><tr><th>Carb ratio</th><th>Correction factor</th><th>Target glucose</th></tr>
+<tr><td>${active?.carbRatio ?? "—"} g/u</td><td>${active?.correctionFactor ?? "—"} mg/dL per u</td><td>${active?.targetGlucose ?? "—"} mg/dL</td></tr></table>
+<h2>Glucose summary (latest synced data)</h2>
+<div class="grid">
+  <div class="stat"><span class="muted">Average</span><b>${m.average ?? "—"} mg/dL</b></div>
+  <div class="stat"><span class="muted">Est. A1C/GMI</span><b>${m.a1c ?? "—"}%</b></div>
+  <div class="stat"><span class="muted">Time in range</span><b>${m.tir}%</b></div>
+  <div class="stat"><span class="muted">Time high</span><b>${m.tar}%</b></div>
+  <div class="stat"><span class="muted">Time low</span><b>${m.tbr}%</b></div>
+</div>
+<p class="muted">Target range ${zones.low}–${zones.high} mg/dL · thresholds from the patient's app.</p>
+<h2>Settings change history</h2>
+<table><tr><th>Date</th><th>Carb ratio</th><th>Correction</th><th>Target</th></tr>${historyRows}</table>
+<h2>Detected patterns</h2>
+<ul>${patterns.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+<p class="muted">Treatment setting changes may take 24–48 hours to show full impact. Always monitor patient response and adjust as needed.</p>
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},300)})</script>
+</body></html>`;
+
+  const w = window.open("", "_blank", "noopener,width=840,height=920");
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+}
+
+// ── Panel shell ──────────────────────────────────────────────────────────────
+
+const PANEL_TABS = [
+  { id: "current", label: "Current Settings" },
+  { id: "history", label: "History & Compare" },
+  { id: "alerts", label: "Alerts & Recommendations" },
+] as const;
+type PanelTab = (typeof PANEL_TABS)[number]["id"];
+
+export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
+  const [tab, setTab] = useState<PanelTab>("history");
+
+  return (
+    <div className="space-y-5">
+      <div data-tour="treatment">
+        <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
+          <Sliders className="w-6 h-6 text-primary" />
+          Treatment Settings
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          Review carb ratios, insulin sensitivity, and targets over time. Compare changes and their
+          impact on glucose trends.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between border-b border-border">
+        <div className="flex gap-1">
+          {PANEL_TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === t.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => exportReport(detail)}
+          className="flex items-center gap-1.5 text-sm text-primary hover:underline pb-2"
+        >
+          <Download className="w-4 h-4" /> Export Report
+        </button>
+      </div>
+
+      {tab === "current" && <CurrentSettingsTab detail={detail} />}
+      {tab === "history" && <TreatmentTrends detail={detail} onAddNew={() => setTab("current")} />}
+      {tab === "alerts" && <AlertsRecommendationsTab detail={detail} />}
+
+      <p className="text-xs text-muted-foreground text-center">
+        Treatment setting changes may take 24–48 hours to show full impact. Always monitor patient
+        response and adjust as needed.
+      </p>
     </div>
   );
 }

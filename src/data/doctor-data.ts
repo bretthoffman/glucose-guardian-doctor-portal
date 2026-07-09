@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
   customFetch,
@@ -8,6 +9,7 @@ import {
   useUnlinkDoctorPatient,
 } from "@doctor-portal/api-client-react";
 import type {
+  CGMReading,
   DoctorLinkedPatient,
   DoctorLinkPatientResponse,
   DoctorMessage,
@@ -50,6 +52,37 @@ export function usePatientSnapshot(accessCode: string): {
       void res.refetch();
     },
   };
+}
+
+/**
+ * Full CGM history for a time window, from the durable per-user store (the sync snapshot only
+ * carries ~1 day). `readings` is `null` while loading or when the endpoint isn't deployed yet —
+ * callers fall back to the snapshot's readings so the comparison always renders something.
+ */
+export function useGlucoseHistory(
+  accessCode: string,
+  fromMs: number,
+  toMs: number,
+): { readings: CGMReading[] | null; isLoading: boolean } {
+  const query = useQuery({
+    queryKey: ["glucose-history", accessCode, fromMs, toMs],
+    enabled: !!accessCode && fromMs > 0 && fromMs < toMs,
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: async (): Promise<CGMReading[] | null> => {
+      try {
+        const from = encodeURIComponent(new Date(fromMs).toISOString());
+        const to = encodeURIComponent(new Date(toMs).toISOString());
+        const r = await customFetch<{ readings?: CGMReading[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/readings?from=${from}&to=${to}`,
+        );
+        return r.readings ?? [];
+      } catch {
+        return null; // endpoint not deployed / unavailable → snapshot fallback
+      }
+    },
+  });
+  return { readings: query.data ?? null, isLoading: query.isLoading };
 }
 
 /** Server-side therapy proposal/decision fields (present once the comms backend is deployed). */
