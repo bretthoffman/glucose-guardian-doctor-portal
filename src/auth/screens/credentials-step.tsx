@@ -4,9 +4,20 @@ import { useDoctorAuthLogin, useDoctorAuthRegister } from "@doctor-portal/api-cl
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useDoctorSession } from "../mock-session";
 import { hashPassword } from "../password";
 import { AuthShell } from "./auth-shell";
+
+const NO_TITLE = "none";
+// Honorific shown to patients as "<title> <last name>" on treatment proposals (e.g. "Dr. Rivera").
+const TITLE_OPTIONS = ["Dr.", "NP", "PA", "RN", "PharmD"] as const;
 
 /**
  * Email + password form for both entry points. `mode` is controlled by the auth flow:
@@ -29,7 +40,9 @@ export function CredentialsStep({
   const { org, actions } = useDoctorSession();
   const register = useDoctorAuthRegister();
   const login = useDoctorAuthLogin();
-  const [name, setName] = useState("");
+  const [title, setTitle] = useState("Dr.");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -50,8 +63,8 @@ export function CredentialsStep({
       return;
     }
     if (mode === "create") {
-      if (!name.trim()) {
-        setErr("Enter your name.");
+      if (!firstName.trim() || !lastName.trim()) {
+        setErr("Enter your first and last name.");
         return;
       }
       if (password !== confirm) {
@@ -61,11 +74,24 @@ export function CredentialsStep({
     }
 
     const passwordHash = hashPassword(password);
+    // "No title" sends an empty title; the server then falls back to the full name for the byline.
+    const titleOut = title === NO_TITLE ? "" : title.trim();
+    const first = firstName.trim();
+    const last = lastName.trim();
+    const displayName = [titleOut, first, last].filter(Boolean).join(" ");
     setSubmitting(true);
     try {
       if (mode === "create") {
         await register.mutateAsync({
-          data: { email: at, passwordHash, displayName: name.trim(), institution: org?.name },
+          data: {
+            email: at,
+            passwordHash,
+            displayName,
+            title: titleOut || undefined,
+            firstName: first,
+            lastName: last,
+            institution: org?.name,
+          },
         });
         // Brand-new account: queue the one-time guided tour (sign-ins never auto-run it).
         try {
@@ -102,17 +128,58 @@ export function CredentialsStep({
     >
       <form onSubmit={submit} className="space-y-4">
         {mode === "create" && (
-          <div>
-            <Label htmlFor="name">Full name</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Dr. Alex Rivera"
-              className="mt-1.5"
-              autoComplete="name"
-            />
+          <div className="grid grid-cols-[5.5rem_1fr] gap-3">
+            <div>
+              <Label htmlFor="title">Title</Label>
+              <Select value={title} onValueChange={setTitle}>
+                <SelectTrigger id="title" className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TITLE_OPTIONS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NO_TITLE}>No title</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="firstName">First name</Label>
+                <Input
+                  id="firstName"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Alex"
+                  className="mt-1.5"
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="lastName">Last name</Label>
+                <Input
+                  id="lastName"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Rivera"
+                  className="mt-1.5"
+                  autoComplete="family-name"
+                />
+              </div>
+            </div>
           </div>
+        )}
+
+        {mode === "create" && lastName.trim() && (
+          <p className="-mt-1 text-xs text-muted-foreground">
+            Patients will see{" "}
+            <span className="font-medium text-foreground">
+              {[title === NO_TITLE ? "" : title, lastName.trim()].filter(Boolean).join(" ")}
+            </span>{" "}
+            on treatment changes.
+          </p>
         )}
 
         <div>

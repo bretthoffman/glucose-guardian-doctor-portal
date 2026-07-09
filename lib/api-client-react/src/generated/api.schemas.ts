@@ -109,6 +109,9 @@ export interface DoctorRegisterRequest {
   email: string;
   passwordHash: string;
   displayName: string;
+  title?: string;
+  firstName?: string;
+  lastName?: string;
   institution?: string;
 }
 
@@ -125,6 +128,9 @@ export interface DoctorProfile {
   doctorId: string;
   email: string;
   displayName: string;
+  title?: string;
+  firstName?: string;
+  lastName?: string;
   institution?: string;
   /** Whether the account has an account-level portal PIN set (drives set-PIN vs. unlock). */
   hasPin?: boolean;
