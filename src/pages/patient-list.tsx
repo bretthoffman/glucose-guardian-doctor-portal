@@ -28,6 +28,7 @@ import {
   useUnlinkPatient,
   usePatientSnapshot,
 } from "@/data/doctor-data";
+import { readDecision, isDecisionUnseen } from "@/data/notifications";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
@@ -84,16 +85,20 @@ function TrendArrow({ trend, className = "w-4 h-4" }: { trend: string; className
 
 function PatientCard({
   entry,
+  doctorId,
   onOpen,
   onRemove,
 }: {
   entry: DoctorLinkedPatient;
+  doctorId?: string;
   onOpen: () => void;
   onRemove: () => void;
 }) {
   const { snapshot, isLoading, error } = usePatientSnapshot(entry.accessCode);
   const m = snapshot ? computeMetrics(snapshot) : null;
   const profile = snapshot?.profile;
+  const decision = readDecision(snapshot);
+  const hasUpdate = !!decision && isDecisionUnseen(doctorId, entry.accessCode, decision);
   const name = profile?.childName ?? entry.displayName ?? entry.accessCode;
   const dtype = diabetesLabel(profile?.diabetesType);
   const status = m?.status ?? null;
@@ -128,6 +133,12 @@ function PatientCard({
             {stale && (
               <span className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-600 border-amber-500/30">
                 Stale
+              </span>
+            )}
+            {hasUpdate && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                New update
               </span>
             )}
           </div>
@@ -319,6 +330,7 @@ export function PatientList() {
               <PatientCard
                 key={entry.accessCode}
                 entry={entry}
+                doctorId={doctor?.id}
                 onOpen={() => setLocation(`/patient/${entry.accessCode}/overview`)}
                 onRemove={() => setRemoving(entry)}
               />

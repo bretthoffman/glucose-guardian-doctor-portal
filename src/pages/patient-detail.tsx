@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -6,6 +6,7 @@ import {
   Syringe,
   SlidersHorizontal,
   MessageSquare,
+  Bell,
   LogOut,
   Lock,
   Activity,
@@ -30,9 +31,11 @@ import { ChartPanel } from "@/components/panels/ChartPanel";
 import { InsulinPanel } from "@/components/panels/InsulinPanel";
 import { TherapyOrdersPanel } from "@/components/panels/TherapyOrdersPanel";
 import { MessagesPanel } from "@/components/panels/MessagesPanel";
+import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
+import { isDecisionUnseen, markDecisionSeen } from "@/data/notifications";
 
 // `inNav: false` tabs are still valid routes (reached from Overview cards) but hidden from the
 // sidebar — the three lookalike pages collapse into one Overview home. Flip these back to true
@@ -43,6 +46,7 @@ const TABS = [
   { id: "insulin", label: "Insulin Log", icon: Syringe, inNav: false },
   { id: "orders", label: "Treatment Settings", icon: SlidersHorizontal, inNav: true },
   { id: "messages", label: "Messages", icon: MessageSquare, inNav: true },
+  { id: "notifications", label: "Notifications", icon: Bell, inNav: true },
 ];
 const DRILL_DOWN = ["chart", "insulin"];
 
@@ -167,6 +171,25 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   );
   const current = TABS.some((t) => t.id === tab) ? tab : "overview";
 
+  // Badge the Notifications tab when the caregiver's latest decision hasn't been opened yet.
+  const decision = detail?.lastDecision;
+  const accessCodeVal = detail?.accessCode;
+  const [decisionSeenBump, setDecisionSeenBump] = useState(0);
+  const notificationUnseen = useMemo(
+    () =>
+      decision && accessCodeVal && doctor?.id
+        ? isDecisionUnseen(doctor.id, accessCodeVal, decision)
+        : false,
+    // decisionSeenBump forces a re-read of localStorage after we mark the decision seen.
+    [decision, accessCodeVal, doctor?.id, decisionSeenBump],
+  );
+  useEffect(() => {
+    if (current === "notifications" && decision && accessCodeVal && doctor?.id) {
+      markDecisionSeen(doctor.id, accessCodeVal, decision);
+      setDecisionSeenBump((n) => n + 1);
+    }
+  }, [current, decision, accessCodeVal, doctor?.id]);
+
   if (isLoading) return <LoadingScreen message="Loading patient…" />;
   if (!detail) return <NotLinked accessCode={accessCode} onBack={() => setLocation("/")} />;
 
@@ -270,6 +293,12 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
               >
                 <Icon className={`w-[18px] h-[18px] ${isActive ? "text-primary" : "opacity-70"}`} />
                 {item.label}
+                {item.id === "notifications" && notificationUnseen && (
+                  <span
+                    className="ml-auto w-2 h-2 rounded-full bg-red-500"
+                    title="New caregiver decision"
+                  />
+                )}
               </button>
             );
           })}
@@ -332,6 +361,9 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
             {current === "orders" && <TherapyOrdersPanel detail={detail} />}
             {current === "messages" && (
               <MessagesPanel accessCode={detail.accessCode} patientName={name} />
+            )}
+            {current === "notifications" && (
+              <NotificationsPanel detail={detail} patientName={name} />
             )}
           </div>
         </div>
