@@ -13,8 +13,9 @@ export function SetPinStep() {
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (pin.length !== 4) {
       setErr("PIN must be 4 digits.");
@@ -24,18 +25,25 @@ export function SetPinStep() {
       setErr("PINs don't match.");
       return;
     }
-    actions.setPin(pin);
+    setErr(null);
+    setSaving(true);
+    try {
+      await actions.setPin(pin);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <AuthShell title="Create your 4-digit PIN" subtitle="Required — it locks this portal on this device.">
+    <AuthShell title="Create your 4-digit PIN" subtitle="Required — unlocks the portal on any computer you sign in from.">
       <form onSubmit={submit} className="space-y-4">
         <div className="rounded-xl border border-border bg-secondary/30 p-3 flex items-start gap-2">
           <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground">
             Patient data stays protected if you step away: the portal locks after a short idle and
-            your PIN unlocks it. The PIN is for this device only and never replaces full sign-in —
-            after you sign out you'll log in with your work email again.
+            your PIN unlocks it. Your PIN is tied to your account — use the same one on any clinic
+            computer. It never replaces full sign-in: after you sign out you'll log in with your work
+            email again.
           </p>
         </div>
         <div>
@@ -61,8 +69,12 @@ export function SetPinStep() {
           />
         </div>
         {err && <p className="text-sm text-destructive">{err}</p>}
-        <Button type="submit" className="w-full h-12" disabled={pin.length !== 4 || confirm.length !== 4}>
-          Set PIN
+        <Button
+          type="submit"
+          className="w-full h-12"
+          disabled={saving || pin.length !== 4 || confirm.length !== 4}
+        >
+          {saving ? "Saving…" : "Set PIN"}
         </Button>
       </form>
     </AuthShell>

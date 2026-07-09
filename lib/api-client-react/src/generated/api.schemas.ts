@@ -126,6 +126,8 @@ export interface DoctorProfile {
   email: string;
   displayName: string;
   institution?: string;
+  /** Whether the account has an account-level portal PIN set (drives set-PIN vs. unlock). */
+  hasPin?: boolean;
 }
 
 export interface DoctorAccountLoginResponse {

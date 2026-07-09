@@ -9,13 +9,22 @@ export function PinLock() {
   const { doctor, attemptsLeft, actions } = useDoctorSession();
   const [pin, setPin] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const ok = actions.unlock(pin);
-    if (!ok) {
-      setErr(`Incorrect PIN. ${Math.max(0, attemptsLeft - 1)} attempt(s) left before full login.`);
-      setPin("");
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ok = await actions.unlock(pin);
+      if (!ok) {
+        setErr(
+          `Incorrect PIN. ${Math.max(0, attemptsLeft - 1)} attempt(s) left before full login.`,
+        );
+        setPin("");
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -42,8 +51,8 @@ export function PinLock() {
           placeholder="••••"
         />
         {err && <p className="text-sm text-destructive text-center">{err}</p>}
-        <Button type="submit" className="w-full h-12" disabled={pin.length !== 4}>
-          Unlock
+        <Button type="submit" className="w-full h-12" disabled={busy || pin.length !== 4}>
+          {busy ? "Unlocking…" : "Unlock"}
         </Button>
       </form>
       <button
