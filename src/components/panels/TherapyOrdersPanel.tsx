@@ -8,6 +8,7 @@ import { AlertTriangle, Clock, Lock, Sliders, CheckCircle2 } from "lucide-react"
 import { formatDate, formatTime } from "@/lib/utils";
 import type { PatientDetail, TherapyOrder, TherapyOrderValues } from "@/data/contracts";
 import { useProposeOrder } from "@/data/doctor-data";
+import { TreatmentTrends } from "@/components/TreatmentTrends";
 
 type FieldKey = "carbRatio" | "correctionFactor" | "targetGlucose";
 
@@ -176,6 +177,8 @@ export function TherapyOrdersPanel({ detail }: { detail: PatientDetail }) {
           )}
         </p>
       )}
+
+      <TreatmentTrends detail={detail} />
 
       {!detail.canPrescribe ? (
         <div className="rounded-xl border border-border bg-secondary/30 p-4 flex items-start gap-3">

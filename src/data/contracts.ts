@@ -76,6 +76,15 @@ export interface PatientDetail {
     status: "approved" | "declined";
     decidedAt: string;
   };
+  /** Chronological log of treatment-setting changes (oldest→newest), for trend comparison. */
+  settingsHistory?: SettingsChange[];
+}
+
+export interface SettingsChange {
+  changedAt: string;
+  carbRatio?: number;
+  correctionFactor?: number;
+  targetGlucose?: number;
 }
 
 /** Result shape shared by the data hooks — mirrors TanStack/Convex query results. */

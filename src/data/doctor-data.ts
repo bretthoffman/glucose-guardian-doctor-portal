@@ -71,6 +71,12 @@ interface ServerTherapyDecision {
 type SnapshotWithOrders = PatientSnapshot & {
   therapyProposal?: ServerTherapyProposal | null;
   therapyDecision?: ServerTherapyDecision | null;
+  settingsHistory?: {
+    changedAt: string;
+    carbRatio?: number;
+    correctionFactor?: number;
+    targetGlucose?: number;
+  }[];
 };
 
 function proposalToOrder(p: ServerTherapyProposal, patientId: string): TherapyOrder {
@@ -121,6 +127,7 @@ function snapshotToDetail(accessCode: string, snapshot: PatientSnapshot): Patien
     },
     proposedOrder: s.therapyProposal ? proposalToOrder(s.therapyProposal, accessCode) : undefined,
     lastDecision: s.therapyDecision ?? undefined,
+    settingsHistory: s.settingsHistory ?? undefined,
   };
 }
 
