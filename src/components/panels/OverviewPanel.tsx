@@ -433,7 +433,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                     onClick={() => go("insulin")}
                     className="w-full text-left text-xs text-primary hover:underline px-1.5"
                   >
-                    +{meals.length - 4} more — view full food history
+                    +{meals.length - 4} more — open Daily Review
                   </button>
                 )}
               </div>
