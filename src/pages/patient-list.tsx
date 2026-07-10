@@ -135,8 +135,11 @@ function PatientCard({
               </span>
             )}
             {stale && (
-              <span className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-600 border-amber-500/30">
-                Stale
+              <span
+                title="The CGM hasn't reported recently — the value shown is the last known reading, not current glucose."
+                className="text-xs px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-600 border-amber-500/30"
+              >
+                No recent data
               </span>
             )}
             {hasUpdate && (
