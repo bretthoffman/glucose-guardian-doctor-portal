@@ -31,6 +31,8 @@ import {
 } from "@/data/doctor-data";
 import { readDecision, isDecisionUnseen } from "@/data/notifications";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
+import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
+import { AttentionStrip } from "@/components/AttentionStrip";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
@@ -254,6 +256,7 @@ export function PatientList() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <DoctorAlertsBell />
             {doctor && (
               <button
                 onClick={() => setProfileOpen(true)}
@@ -297,6 +300,12 @@ export function PatientList() {
               : `${patients.length} linked patient${patients.length === 1 ? "" : "s"} · sorted by urgency.`}
           </p>
         </section>
+
+        <AttentionStrip
+          patients={patients}
+          doctorId={doctor?.id}
+          onOpen={(code) => setLocation(`/patient/${code}/overview`)}
+        />
 
         <Card>
           <CardContent className="p-5">

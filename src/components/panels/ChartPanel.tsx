@@ -22,6 +22,7 @@ import {
 import type { CGMReading, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { zonesFromSnapshot, type GlucoseZones } from "@/lib/glucose-metrics";
 import { GlucoseTrendChart } from "@/components/GlucoseTrendChart";
+import { LabA1cRecord } from "@/components/LabA1cRecord";
 
 const DAY = 86_400_000;
 const RANGES = [3, 7, 14, 30, 90, 180, 365];
@@ -333,6 +334,7 @@ export function ChartPanel({ data }: { data: PatientSnapshot }) {
             )}
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">Goal: &lt; 7.0%</p>
+          <LabA1cRecord snapshot={data} accessCode={data.accessCode} estimated={cur.gmi} />
         </KpiShell>
 
         <KpiShell label="Average Glucose">

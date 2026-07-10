@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   customFetch,
@@ -83,6 +83,143 @@ export function useGlucoseHistory(
     },
   });
   return { readings: query.data ?? null, isLoading: query.isLoading };
+}
+
+// ---- Doctor alerts (bell feed) ----
+
+export interface DoctorAlert {
+  id: string;
+  kind: string;
+  accessCode: string;
+  message: string;
+  value?: number;
+  createdAt: number;
+  readAt?: number;
+}
+
+/**
+ * The doctor's alert feed, polled every 60s. `alerts` is `null` until the backend alerts module
+ * is deployed (or on error) — callers hide the bell entirely in that case.
+ */
+export function useDoctorAlerts(): {
+  alerts: DoctorAlert[] | null;
+  unreadCount: number;
+  markAllRead: () => void;
+} {
+  const queryClient = useQueryClient();
+  const q = useQuery({
+    queryKey: ["doctor-alerts"],
+    refetchInterval: 60_000,
+    retry: false,
+    queryFn: async (): Promise<{ alerts: DoctorAlert[]; unreadCount: number } | null> => {
+      try {
+        return await customFetch<{ alerts: DoctorAlert[]; unreadCount: number }>(
+          "/api/doctor/me/alerts",
+        );
+      } catch {
+        return null;
+      }
+    },
+  });
+  const markAllRead = useCallback(() => {
+    void (async () => {
+      try {
+        await customFetch("/api/doctor/me/alerts/read", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await queryClient.invalidateQueries({ queryKey: ["doctor-alerts"] });
+      } catch {
+        /* endpoint pending deployment */
+      }
+    })();
+  }, [queryClient]);
+  return {
+    alerts: q.data?.alerts ?? null,
+    unreadCount: q.data?.unreadCount ?? 0,
+    markAllRead,
+  };
+}
+
+// ---- Compliance access log ----
+
+export interface AccessLogEntry {
+  action: string;
+  at: number;
+  doctorName: string;
+}
+
+/** Access log for a patient; `null` until the backend route is deployed. */
+export function useAccessLog(accessCode: string): AccessLogEntry[] | null {
+  const q = useQuery({
+    queryKey: ["access-log", accessCode],
+    enabled: !!accessCode,
+    refetchInterval: 120_000,
+    retry: false,
+    queryFn: async (): Promise<AccessLogEntry[] | null> => {
+      try {
+        const r = await customFetch<{ entries: AccessLogEntry[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/access-log`,
+        );
+        return r.entries ?? [];
+      } catch {
+        return null;
+      }
+    },
+  });
+  return q.data ?? null;
+}
+
+// ---- Lab A1C ----
+
+export interface LabA1cInfo {
+  value: number;
+  measuredAt: string;
+  enteredByName?: string;
+  enteredAt?: string;
+}
+
+/** The doctor-recorded lab A1C carried on the patient GET response (top level, like proposals). */
+export function readLabA1c(snapshot: unknown): LabA1cInfo | undefined {
+  const l = (snapshot as { labA1c?: LabA1cInfo | null } | null | undefined)?.labA1c;
+  return l ?? undefined;
+}
+
+export function useSetLabA1c(accessCode: string): {
+  save: (value: number, measuredAt: string) => Promise<LabA1cInfo>;
+  isPending: boolean;
+} {
+  const [isPending, setIsPending] = useState(false);
+  const queryClient = useQueryClient();
+  const save = useCallback(
+    async (value: number, measuredAt: string) => {
+      setIsPending(true);
+      try {
+        const saved = await customFetch<LabA1cInfo>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/lab-a1c`,
+          { method: "POST", body: JSON.stringify({ value, measuredAt }) },
+        );
+        await queryClient.invalidateQueries();
+        return saved;
+      } catch (e) {
+        if (e instanceof ApiError) {
+          if (e.status === 404 || e.status === 405 || e.status === 503) {
+            throw new Error(
+              "Saving lab A1C needs the pending backend deployment — it will work after the next deploy.",
+            );
+          }
+          if (e.status === 400) {
+            throw new Error("Enter an A1C between 3 and 20% with a valid past date.");
+          }
+        }
+        throw new Error("Could not save the lab A1C. Try again.");
+      } finally {
+        setIsPending(false);
+      }
+    },
+    [accessCode, queryClient],
+  );
+  return { save, isPending };
 }
 
 /** Server-side therapy proposal/decision fields (present once the comms backend is deployed). */

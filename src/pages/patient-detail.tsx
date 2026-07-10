@@ -34,6 +34,7 @@ import { TherapyOrdersPanel } from "@/components/panels/TherapyOrdersPanel";
 import { MessagesPanel } from "@/components/panels/MessagesPanel";
 import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
+import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
@@ -308,6 +309,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
                   {doctor.specialty || doctor.email}
                 </p>
               </div>
+              <DoctorAlertsBell />
               <button
                 onClick={() => setProfileOpen(true)}
                 title="Edit your profile"

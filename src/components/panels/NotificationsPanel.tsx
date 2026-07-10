@@ -1,7 +1,16 @@
-import { Bell, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, Clock, ScrollText, XCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate, formatTime } from "@/lib/utils";
 import type { PatientDetail } from "@/data/contracts";
+import { useAccessLog } from "@/data/doctor-data";
+
+const ACTION_LABEL: Record<string, string> = {
+  viewed: "Viewed patient data",
+  proposed_change: "Proposed a treatment change",
+  recorded_lab_a1c: "Recorded a lab A1C",
+  linked: "Linked this patient",
+  unlinked: "Removed this patient",
+};
 
 function ChangeStat({ label, value, unit }: { label: string; value?: number; unit: string }) {
   if (value == null) return null;
@@ -30,6 +39,7 @@ export function NotificationsPanel({
   const pending = detail.proposedOrder;
   const decision = detail.lastDecision;
   const hasAny = !!pending || !!decision;
+  const accessLog = useAccessLog(detail.accessCode);
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -103,6 +113,39 @@ export function NotificationsPanel({
             <p className="text-sm text-foreground italic mt-3">&ldquo;{pending.note}&rdquo;</p>
           )}
         </div>
+      )}
+
+      {accessLog && accessLog.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm font-medium text-foreground flex items-center gap-2 mb-3">
+              <ScrollText className="w-4 h-4 text-muted-foreground" /> Access log
+            </p>
+            <ul className="space-y-2">
+              {accessLog.map((e, i) => {
+                const iso = new Date(e.at).toISOString();
+                return (
+                  <li
+                    key={`${e.at}-${i}`}
+                    className="text-xs flex items-baseline justify-between gap-3"
+                  >
+                    <span className="text-foreground min-w-0 truncate">
+                      {ACTION_LABEL[e.action] ?? e.action}
+                      <span className="text-muted-foreground"> — {e.doctorName}</span>
+                    </span>
+                    <span className="text-muted-foreground shrink-0">
+                      {formatDate(iso)} · {formatTime(iso)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-[11px] text-muted-foreground mt-3 pt-3 border-t border-border">
+              Every view and change of this patient's data is recorded. "Viewed" entries collapse
+              to one per 30 minutes.
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

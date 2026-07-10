@@ -20,7 +20,8 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
-import { formatTime, getGlucoseColor } from "@/lib/utils";
+import { formatDate, formatTime, getGlucoseColor } from "@/lib/utils";
+import { readLabA1c } from "@/data/doctor-data";
 import {
   computeMetrics,
   detectPatterns,
@@ -203,6 +204,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
   const patterns = detectPatterns(data);
   const status = m.status ? STATUS_META[m.status] : null;
   const a1cNum = m.a1c ? Number(m.a1c) : null;
+  const labA1c = readLabA1c(data);
   const go = (tab: string) => setLocation(`/patient/${accessCode}/${tab}`);
   const editLink = (
     <button onClick={() => go("orders")} className="text-xs text-primary hover:underline">
@@ -264,7 +266,11 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
         return (
           <Kpi
             label="Estimated A1C / GMI"
-            foot="Goal: < 7.0%"
+            foot={
+              labA1c
+                ? `Lab ${labA1c.value}% (${formatDate(labA1c.measuredAt)}) · Goal < 7.0%`
+                : "Goal: < 7.0%"
+            }
             right={
               a1cNum != null ? (
                 <span
