@@ -31,6 +31,7 @@ import {
 import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
 import { MealDetailDialog } from "@/components/MealDetailDialog";
+import { formatDate } from "@/lib/utils";
 import {
   buildDayReview,
   buildDayChips,
@@ -258,6 +259,24 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
 
   const [selectedKey, setSelectedKey] = useState(() => defaultDayKey(data));
   const [mealDetail, setMealDetail] = useState<FoodLogEntry | null>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  // Every synced food entry (newest first), grouped by day — the day review above shows one day
+  // at a time; this is the complete list so nothing logged ever looks "missing".
+  const historyGroups = useMemo(() => {
+    const sorted = [...(data.foodLog ?? [])].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+    const groups: { day: string; items: FoodLogEntry[] }[] = [];
+    for (const f of sorted) {
+      const day = formatDate(f.timestamp);
+      const last = groups[groups.length - 1];
+      if (last && last.day === day) last.items.push(f);
+      else groups.push({ day, items: [f] });
+    }
+    return groups;
+  }, [data.foodLog]);
+  const totalFoods = data.foodLog?.length ?? 0;
   const [winStart, setWinStart] = useState(() => {
     const sel = defaultDayKey(data);
     const end = maxKey(bounds.latest, todayKey, sel);
@@ -359,6 +378,12 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+      <MealDetailDialog
+        food={mealDetail}
+        snapshot={data}
+        open={!!mealDetail}
+        onOpenChange={(o) => !o && setMealDetail(null)}
+      />
       {/* ── MAIN ────────────────────────────────────────────────── */}
       <div className="space-y-5 min-w-0">
         {/* Calendar strip */}
@@ -560,12 +585,6 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                       }
                     />
                   ))}
-                  <MealDetailDialog
-                    food={mealDetail}
-                    snapshot={data}
-                    open={!!mealDetail}
-                    onOpenChange={(o) => !o && setMealDetail(null)}
-                  />
                 </div>
               ) : (
                 <div className="text-center py-10 text-sm text-muted-foreground border-2 border-dashed border-border rounded-xl">
@@ -630,6 +649,65 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
               </div>
             </div>
           </div>
+
+          {/* Full food history — every synced entry, not just the selected day */}
+          {totalFoods > 0 && (
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between gap-2 flex-wrap">
+                <h3 className="font-medium text-foreground flex items-center gap-2">
+                  <Utensils className="w-4 h-4 text-primary" /> Full Food History
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {totalFoods} entr{totalFoods === 1 ? "y" : "ies"}
+                  </span>
+                </h3>
+                <span className="text-[11px] text-muted-foreground">
+                  Everything the app has synced · click a meal for details
+                </span>
+              </div>
+              <div className="p-2">
+                {(showAllHistory ? historyGroups : historyGroups.slice(0, 3)).map((g) => (
+                  <div key={g.day}>
+                    <p className="px-2 pt-2 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {g.day}
+                    </p>
+                    {g.items.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setMealDetail(f);
+                          setSelectedKey(localDayKey(new Date(f.timestamp)));
+                        }}
+                        className="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg hover:bg-secondary/50 text-left text-sm transition-colors"
+                      >
+                        <span className="min-w-0 flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground shrink-0 w-16">
+                            {clock(f.timestamp)}
+                          </span>
+                          <span className="text-foreground truncate">{f.foodName}</span>
+                          {f.fromPhoto && (
+                            <Camera className="w-3 h-3 text-muted-foreground shrink-0" />
+                          )}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {f.estimatedCarbs}g{f.insulinUnits ? ` · ${f.insulinUnits}u` : ""}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {historyGroups.length > 3 && (
+                  <button
+                    onClick={() => setShowAllHistory((v) => !v)}
+                    className="w-full mt-1 py-2 text-xs text-primary hover:underline"
+                  >
+                    {showAllHistory
+                      ? "Show recent days only"
+                      : `Show all ${historyGroups.length} days`}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Chart + event log */}
           <div className="space-y-5 min-w-0">

@@ -428,6 +428,14 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                     <span className="text-foreground font-medium shrink-0">{f.estimatedCarbs}g</span>
                   </button>
                 ))}
+                {meals.length > 4 && (
+                  <button
+                    onClick={() => go("insulin")}
+                    className="w-full text-left text-xs text-primary hover:underline px-1.5"
+                  >
+                    +{meals.length - 4} more — view full food history
+                  </button>
+                )}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground py-4 text-center">No meals logged.</p>
