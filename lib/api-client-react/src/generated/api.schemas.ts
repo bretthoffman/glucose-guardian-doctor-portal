@@ -241,6 +241,10 @@ export interface FoodLogEntry {
   insulinUnits: number;
   confidence: FoodLogEntryConfidence;
   fromPhoto: boolean;
+  /** Device-local file URI on the patient's phone (not renderable in the portal). */
+  photoUri?: string;
+  /** Small base64 data-URI of the meal photo, synced from the app (renderable). */
+  photoDataUri?: string;
 }
 
 export interface CGMReading {

@@ -28,8 +28,9 @@ import {
   Gauge,
   CircleDot,
 } from "lucide-react";
-import type { PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
+import { MealDetailDialog } from "@/components/MealDetailDialog";
 import {
   buildDayReview,
   buildDayChips,
@@ -178,7 +179,15 @@ function Glucose({ value, zones }: { value: number | null; zones: DayReview["zon
 
 // ─── Meal card ───────────────────────────────────────────────────────────────
 
-function MealCard({ meal, review }: { meal: DayMeal; review: DayReview }) {
+function MealCard({
+  meal,
+  review,
+  onDetail,
+}: {
+  meal: DayMeal;
+  review: DayReview;
+  onDetail?: () => void;
+}) {
   const meta = SLOT_META[meal.slot];
   const badge = meal.doseType ? DOSE_BADGE[meal.doseType] : null;
   return (
@@ -196,7 +205,15 @@ function MealCard({ meal, review }: { meal: DayMeal; review: DayReview }) {
               <span className="text-xs text-muted-foreground">{clock(meal.timestamp)}</span>
               {meal.fromPhoto && <Camera className="w-3.5 h-3.5 text-muted-foreground" />}
             </div>
-            <p className="text-sm text-foreground mt-0.5 line-clamp-2">{meal.name}</p>
+            <button
+              onClick={onDetail}
+              title="View meal details"
+              className="text-left block w-full"
+            >
+              <p className="text-sm text-foreground mt-0.5 line-clamp-2 hover:text-primary hover:underline decoration-dotted underline-offset-2 transition-colors">
+                {meal.name}
+              </p>
+            </button>
             <p className="text-xs text-muted-foreground mt-0.5">{meal.carbs}g carbs</p>
           </div>
           <div className="text-right shrink-0">
@@ -240,6 +257,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
   const todayKey = localDayKey(new Date());
 
   const [selectedKey, setSelectedKey] = useState(() => defaultDayKey(data));
+  const [mealDetail, setMealDetail] = useState<FoodLogEntry | null>(null);
   const [winStart, setWinStart] = useState(() => {
     const sel = defaultDayKey(data);
     const end = maxKey(bounds.latest, todayKey, sel);
@@ -533,8 +551,21 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
               {review.meals.length ? (
                 <div className="space-y-3">
                   {review.meals.map((m) => (
-                    <MealCard key={m.id} meal={m} review={review} />
+                    <MealCard
+                      key={m.id}
+                      meal={m}
+                      review={review}
+                      onDetail={() =>
+                        setMealDetail((data.foodLog ?? []).find((f) => f.id === m.id) ?? null)
+                      }
+                    />
                   ))}
+                  <MealDetailDialog
+                    food={mealDetail}
+                    snapshot={data}
+                    open={!!mealDetail}
+                    onOpenChange={(o) => !o && setMealDetail(null)}
+                  />
                 </div>
               ) : (
                 <div className="text-center py-10 text-sm text-muted-foreground border-2 border-dashed border-border rounded-xl">

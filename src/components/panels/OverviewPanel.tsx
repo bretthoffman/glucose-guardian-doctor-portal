@@ -19,9 +19,10 @@ import {
   User,
   LayoutGrid,
 } from "lucide-react";
-import type { PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatDate, formatTime, getGlucoseColor } from "@/lib/utils";
 import { readLabA1c } from "@/data/doctor-data";
+import { MealDetailDialog } from "@/components/MealDetailDialog";
 import {
   computeMetrics,
   detectPatterns,
@@ -205,6 +206,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
   const status = m.status ? STATUS_META[m.status] : null;
   const a1cNum = m.a1c ? Number(m.a1c) : null;
   const labA1c = readLabA1c(data);
+  const [mealDetail, setMealDetail] = useState<FoodLogEntry | null>(null);
   const go = (tab: string) => setLocation(`/patient/${accessCode}/${tab}`);
   const editLink = (
     <button onClick={() => go("orders")} className="text-xs text-primary hover:underline">
@@ -410,7 +412,12 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
             {meals.length ? (
               <div className="space-y-3">
                 {meals.slice(0, 4).map((f) => (
-                  <div key={f.id} className="flex items-center justify-between gap-3 text-sm">
+                  <button
+                    key={f.id}
+                    onClick={() => setMealDetail(f)}
+                    title="View meal details"
+                    className="w-full flex items-center justify-between gap-3 text-sm text-left rounded-lg px-1.5 py-1 -mx-1.5 hover:bg-secondary/50 transition-colors"
+                  >
                     <div className="min-w-0">
                       <p className="text-foreground truncate flex items-center gap-1.5">
                         {f.foodName}
@@ -419,7 +426,7 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                       <p className="text-[11px] text-muted-foreground">{formatTime(f.timestamp)}</p>
                     </div>
                     <span className="text-foreground font-medium shrink-0">{f.estimatedCarbs}g</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -565,6 +572,13 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
           )}
         </>
       )}
+
+      <MealDetailDialog
+        food={mealDetail}
+        snapshot={data}
+        open={!!mealDetail}
+        onOpenChange={(o) => !o && setMealDetail(null)}
+      />
     </div>
   );
 }
