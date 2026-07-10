@@ -28,9 +28,9 @@ import {
   Gauge,
   CircleDot,
 } from "lucide-react";
-import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
-import { MealDetailDialog } from "@/components/MealDetailDialog";
+import { MealResponsePanel } from "@/components/MealResponsePanel";
 import {
   buildDayReview,
   buildDayChips,
@@ -253,7 +253,9 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
   const todayKey = localDayKey(new Date());
 
   const [selectedKey, setSelectedKey] = useState(() => defaultDayKey(data));
-  const [mealDetail, setMealDetail] = useState<FoodLogEntry | null>(null);
+  // Clicking a meal swaps the Glucose & Insulin Timeline for that meal's response view.
+  const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
+  useEffect(() => setSelectedMealId(null), [selectedKey]);
   const [winStart, setWinStart] = useState(() => {
     const sel = defaultDayKey(data);
     const end = maxKey(bounds.latest, todayKey, sel);
@@ -273,6 +275,9 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
 
   const chips = useMemo(() => buildDayChips(data, winStart, winEnd), [data, winStart, winEnd]);
   const review = useMemo(() => buildDayReview(data, selectedKey), [data, selectedKey]);
+  const selectedMeal = selectedMealId
+    ? review.meals.find((m) => m.id === selectedMealId)
+    : undefined;
   const s = review.summary;
   const notes = notesByDay[selectedKey] ?? [];
 
@@ -355,12 +360,6 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
-      <MealDetailDialog
-        food={mealDetail}
-        snapshot={data}
-        open={!!mealDetail}
-        onOpenChange={(o) => !o && setMealDetail(null)}
-      />
       {/* ── MAIN ────────────────────────────────────────────────── */}
       <div className="space-y-5 min-w-0">
         {/* Calendar strip */}
@@ -557,9 +556,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                       key={m.id}
                       meal={m}
                       review={review}
-                      onDetail={() =>
-                        setMealDetail((data.foodLog ?? []).find((f) => f.id === m.id) ?? null)
-                      }
+                      onDetail={() => setSelectedMealId(m.id)}
                     />
                   ))}
                 </div>
@@ -627,8 +624,17 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
             </div>
           </div>
 
-          {/* Chart + event log */}
+          {/* Chart + event log — the timeline swaps for the selected meal's response view */}
           <div className="space-y-5 min-w-0">
+            {selectedMeal ? (
+              <MealResponsePanel
+                meal={selectedMeal}
+                food={(data.foodLog ?? []).find((f) => f.id === selectedMeal.id)}
+                snapshot={data}
+                review={review}
+                onBack={() => setSelectedMealId(null)}
+              />
+            ) : (
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                 <h3 className="font-medium text-foreground">Glucose &amp; Insulin Timeline</h3>
@@ -663,6 +669,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                 height={320}
               />
             </div>
+            )}
 
             {/* Event log */}
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
