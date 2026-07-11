@@ -10,6 +10,7 @@ const ACTION_LABEL: Record<string, string> = {
   recorded_lab_a1c: "Recorded a lab A1C",
   linked: "Linked this patient",
   unlinked: "Removed this patient",
+  assistant_query: "Asked the assistant",
 };
 
 function ChangeStat({ label, value, unit }: { label: string; value?: number; unit: string }) {

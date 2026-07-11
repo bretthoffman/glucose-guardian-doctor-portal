@@ -35,6 +35,7 @@ import { MessagesPanel } from "@/components/panels/MessagesPanel";
 import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
+import { AssistantWidget } from "@/components/AssistantWidget";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
@@ -374,6 +375,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
       </main>
       <ProductTour steps={TOUR_STEPS} enabled={current === "overview"} onNavigate={navigateTab} />
       <DoctorProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <AssistantWidget accessCode={detail.accessCode} patientName={name} />
     </div>
   );
 }
