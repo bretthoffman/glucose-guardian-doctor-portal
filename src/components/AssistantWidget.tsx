@@ -66,7 +66,13 @@ export function AssistantWidget({
       try {
         const r = await customFetch<{ reply: string }>(
           `/api/doctor/patient/${encodeURIComponent(accessCode)}/assistant`,
-          { method: "POST", body: JSON.stringify({ messages: history.slice(-12) }) },
+          {
+            method: "POST",
+            body: JSON.stringify({
+              messages: history.slice(-12),
+              tzOffset: new Date().getTimezoneOffset(),
+            }),
+          },
         );
         setTurns([...history, { role: "assistant", content: r.reply }]);
       } catch (e) {
