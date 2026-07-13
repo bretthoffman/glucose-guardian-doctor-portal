@@ -2,8 +2,13 @@ import { AlertTriangle, Cake, Clock, IdCard, Phone, RefreshCw, User } from "luci
 import type { LucideIcon } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatDate, formatTime } from "@/lib/utils";
-import { computeMetrics, formatAge, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
+import { computeMetrics, formatAge, isToday, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
 import { PatientAvatar } from "@/components/PatientAvatar";
+
+/** Time for today's events, but a date once they're older — so a stale entry never reads as "now". */
+function stamp(ts: string): string {
+  return isToday(ts) ? formatTime(ts) : formatDate(ts);
+}
 
 function typeLabel(t?: string): string {
   return t === "type1" ? "Type 1" : t === "type2" ? "Type 2" : "Other";
@@ -74,6 +79,9 @@ export function PatientHeader({
 }) {
   const p = snapshot.profile;
   const age = ageLabel(p.dateOfBirth);
+  const syncMins = snapshot.syncedAt
+    ? Math.max(0, Math.round((Date.now() - new Date(snapshot.syncedAt).getTime()) / 60000))
+    : null;
   const m = computeMetrics(snapshot);
   const urgent = !m.stale && (m.status === "urgentHigh" || m.status === "urgentLow");
   const meta = m.status ? STATUS_META[m.status] : null;
@@ -160,17 +168,27 @@ export function PatientHeader({
         <div className="flex items-center gap-6 rounded-xl border border-border bg-secondary/30 px-4 py-3 ml-auto flex-wrap">
           <MetaStat
             label="Last CGM Reading"
-            value={m.latest ? formatTime(m.latest.timestamp) : "—"}
+            value={m.latest ? stamp(m.latest.timestamp) : "—"}
           />
           <MetaStat
             label="Last Insulin"
-            value={m.lastInsulin ? `${m.lastInsulin.units}u · ${formatTime(m.lastInsulin.timestamp)}` : "—"}
+            value={m.lastInsulin ? `${m.lastInsulin.units}u · ${stamp(m.lastInsulin.timestamp)}` : "—"}
           />
           <MetaStat
             label="Last Meal Entry"
-            value={m.lastMeal ? formatTime(m.lastMeal.timestamp) : "—"}
+            value={m.lastMeal ? stamp(m.lastMeal.timestamp) : "—"}
           />
         </div>
+
+        {/* Meals & insulin only reach the portal when the app syncs; make staleness explicit so an
+            old entry is never mistaken for current activity. */}
+        {syncMins != null && syncMins > 180 && (
+          <p className="w-full text-xs text-amber-600/90 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            Meals &amp; insulin last synced from the app {formatAge(syncMins)} — newer entries in the
+            app won't appear until it syncs again. (Glucose updates continuously.)
+          </p>
+        )}
       </div>
     </div>
   );
