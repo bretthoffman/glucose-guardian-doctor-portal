@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Activity, ShieldAlert, ArrowRight } from "lucide-react";
+import { ShieldAlert, ArrowRight } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDoctorLogin } from "@doctor-portal/api-client-react";
@@ -52,11 +53,9 @@ export default function Login() {
 
       <div className="w-full max-w-md p-6 relative z-10">
         <div className="bg-card border border-border rounded-2xl p-8 sm:p-10 text-center shadow-xl">
-          <div className="w-16 h-16 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-primary/30">
-            <Activity className="w-8 h-8 text-primary" />
-          </div>
+          <BrandLogo className="w-20 h-20 mx-auto mb-4" />
 
-          <h1 className="text-3xl font-bold text-foreground mb-2">Gluco Guardian</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Glucose Guardian</h1>
           <p className="text-muted-foreground mb-8">Doctor & Care Team Portal</p>
 
           <form onSubmit={handleLogin} className="space-y-5 text-left">

@@ -9,7 +9,6 @@ import {
   Bell,
   LogOut,
   Lock,
-  Activity,
   ChevronsUpDown,
   ArrowLeft,
   ArrowLeftRight,
@@ -36,6 +35,7 @@ import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
 import { AssistantWidget } from "@/components/AssistantWidget";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
 import { usePatientDetail } from "@/data/doctor-data";
@@ -193,11 +193,9 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
     <div className="flex h-screen bg-background overflow-hidden">
       <aside className="w-64 bg-card border-r border-border flex flex-col shrink-0">
         <div className="p-4 flex items-center gap-2.5 border-b border-border/60">
-          <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
-            <Activity className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <BrandLogo className="w-10 h-10" />
           <div className="leading-tight">
-            <p className="font-display font-bold text-foreground">GlucoGuardian</p>
+            <p className="font-display font-bold text-foreground">Glucose Guardian</p>
             <p className="text-[11px] text-muted-foreground">Diabetes Care Portal</p>
           </div>
         </div>
@@ -384,9 +382,7 @@ function NotLinked({ accessCode, onBack }: { accessCode: string; onBack: () => v
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <div className="w-full max-w-md text-center bg-card border border-border rounded-2xl p-8 shadow-xl">
-        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Activity className="w-8 h-8 text-primary" />
-        </div>
+        <BrandLogo className="w-16 h-16 mx-auto mb-6" />
         <h2 className="text-xl font-bold text-foreground mb-2">Patient not found</h2>
         <p className="text-muted-foreground text-sm mb-6">
           No linked patient matches access code{" "}

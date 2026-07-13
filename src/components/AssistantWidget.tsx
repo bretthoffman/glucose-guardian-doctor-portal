@@ -90,17 +90,19 @@ export function AssistantWidget({
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        title={`Ask Glucose Guardian about ${patientName}'s care`}
-        aria-label="Ask Glucose Guardian"
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 pl-4 pr-5 py-3.5 rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/25 hover:scale-[1.03] transition-transform max-w-[calc(100vw-3rem)]"
-      >
-        <Sparkles className="w-5 h-5 shrink-0" />
-        <span className="text-sm font-medium truncate">
-          Ask Glucose Guardian about {patientName}'s care
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-center gap-2 max-w-[calc(100vw-3rem)]">
+        <span className="px-3 py-1.5 rounded-full bg-card border border-border shadow-lg text-xs font-medium text-foreground max-w-[220px] truncate">
+          Ask about {patientName}'s care
         </span>
-      </button>
+        <button
+          onClick={() => setOpen(true)}
+          title={`Ask Glucose Guardian about ${patientName}'s care`}
+          aria-label="Ask Glucose Guardian"
+          className="w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/25 flex items-center justify-center hover:scale-105 transition-transform self-end"
+        >
+          <Sparkles className="w-6 h-6" />
+        </button>
+      </div>
     );
   }
 

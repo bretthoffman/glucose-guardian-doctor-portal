@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import {
-  Activity,
   LogOut,
   ChevronRight,
   Building2,
@@ -33,6 +32,7 @@ import { readDecision, isDecisionUnseen } from "@/data/notifications";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
 import { AttentionStrip } from "@/components/AttentionStrip";
+import { BrandLogo } from "@/components/BrandLogo";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
 
 function diabetesLabel(t?: string): string | undefined {
@@ -245,12 +245,10 @@ export function PatientList() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
-              <Activity className="w-5 h-5 text-primary-foreground" />
-            </div>
+          <div className="flex items-center gap-2.5">
+            <BrandLogo className="w-10 h-10" />
             <div>
-              <p className="font-display font-bold text-foreground leading-tight">GlucoGuardian</p>
+              <p className="font-display font-bold text-foreground leading-tight">Glucose Guardian</p>
               {org && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Building2 className="w-3 h-3" /> {org.name}

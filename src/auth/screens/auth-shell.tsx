@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Activity } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export function AuthShell({
   title,
@@ -27,9 +27,7 @@ export function AuthShell({
       </div>
       <div className={`w-full ${width} p-6 relative z-10`}>
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-primary/30">
-            <Activity className="w-7 h-7 text-primary" />
-          </div>
+          <BrandLogo className="w-20 h-20 mx-auto mb-3" />
           <h1 className="text-2xl font-bold text-foreground">{title}</h1>
           {subtitle && <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>}
         </div>

@@ -43,7 +43,7 @@ export function MessagesView({
     <Card className="h-[calc(100vh-140px)] flex flex-col border-border overflow-hidden">
       <div className="bg-secondary/50 border-b border-border p-4">
         <h3 className="font-semibold text-foreground">Chat with {patientName}'s guardian</h3>
-        <p className="text-xs text-muted-foreground">They use the Gluco Guardian mobile app</p>
+        <p className="text-xs text-muted-foreground">They use the Glucose Guardian mobile app</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>

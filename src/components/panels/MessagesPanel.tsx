@@ -46,7 +46,7 @@ export function MessagesPanel({ accessCode, patientName }: { accessCode: string,
       <div className="bg-secondary/50 border-b border-border p-4 flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-foreground">Chat with {patientName}'s Guardian</h3>
-          <p className="text-xs text-muted-foreground">They use the Gluco Guardian mobile app</p>
+          <p className="text-xs text-muted-foreground">They use the Glucose Guardian mobile app</p>
         </div>
       </div>
 
