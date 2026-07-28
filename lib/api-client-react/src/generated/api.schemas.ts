@@ -213,6 +213,7 @@ export const InsulinLogEntryType = {
   bolus: "bolus",
   correction: "correction",
   manual: "manual",
+  basal: "basal",
 } as const;
 
 export interface InsulinLogEntry {
@@ -222,6 +223,14 @@ export interface InsulinLogEntry {
   type: InsulinLogEntryType;
   note?: string;
   foodLogId?: string;
+  /** Insulin the dose was for, e.g. "Humalog · 100 u/mL" (from the app's insulinTypes). */
+  insulinType?: string;
+  /** The calculator's recommended dose at log time — compare against `units` (taken). */
+  recommendedUnits?: number;
+  /** True when the taken dose was manually edited away from the recommendation. */
+  manualOverride?: boolean;
+  /** Care Circle: display name of who logged this dose (absent on legacy device-local entries). */
+  authorName?: string;
 }
 
 export type FoodLogEntryConfidence =
@@ -245,6 +254,13 @@ export interface FoodLogEntry {
   photoUri?: string;
   /** Small base64 data-URI of the meal photo, synced from the app (renderable). */
   photoDataUri?: string;
+  /** Optional macro context from the AI analysis (carbs-only entries stay supported). */
+  fatGrams?: number;
+  proteinGrams?: number;
+  /** How fast this meal's carbs hit: fast (~2h), medium (~3h), slow / high-fat (~4h). */
+  absorption?: "fast" | "medium" | "slow";
+  /** Care Circle: display name of who logged this meal. */
+  authorName?: string;
 }
 
 export interface CGMReading {

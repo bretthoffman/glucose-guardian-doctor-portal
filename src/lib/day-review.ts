@@ -9,7 +9,7 @@ import { glucoseStatus, zonesFromSnapshot, type GlucoseZones } from "./glucose-m
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type MealSlot = "breakfast" | "lunch" | "dinner" | "snack";
-export type DoseType = InsulinLogEntry["type"]; // "bolus" | "correction" | "manual"
+export type DoseType = InsulinLogEntry["type"]; // "bolus" | "correction" | "manual" | "basal"
 export type Direction = "up" | "down" | "stable";
 
 export interface DayMeal {
@@ -18,9 +18,16 @@ export interface DayMeal {
   timestamp: string;
   name: string;
   carbs: number;
+  fatGrams: number | null;
+  proteinGrams: number | null;
+  absorption: "fast" | "medium" | "slow" | null;
   fromPhoto: boolean;
   units: number | null;
   doseType: DoseType | null;
+  insulinType: string | null;
+  recommendedUnits: number | null;
+  manualOverride: boolean;
+  loggedBy: string | null;
   preGlucose: number | null;
   postGlucose: number | null;
   direction: Direction | null;
@@ -37,6 +44,10 @@ export interface DayEvent {
   postGlucose: number | null;
   units: number | null;
   doseType: DoseType | null;
+  insulinType: string | null;
+  recommendedUnits: number | null;
+  manualOverride: boolean;
+  loggedBy: string | null;
   note: string;
   fromPhoto: boolean;
 }
@@ -310,7 +321,7 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     let best: InsulinLogEntry | null = null;
     let bestGap = Infinity;
     for (const l of insulin) {
-      if (usedInsulinIds.has(l.id) || l.type === "correction") continue;
+      if (usedInsulinIds.has(l.id) || l.type === "correction" || l.type === "basal") continue;
       const gap = Math.abs(ms(l.timestamp) - ms(food.timestamp));
       if (gap <= 25 * MIN && gap < bestGap) {
         best = l;
@@ -332,9 +343,16 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
       timestamp: food.timestamp,
       name: food.foodName,
       carbs: food.estimatedCarbs,
+      fatGrams: food.fatGrams ?? null,
+      proteinGrams: food.proteinGrams ?? null,
+      absorption: food.absorption ?? null,
       fromPhoto: food.fromPhoto,
       units: dose?.units ?? null,
       doseType: dose?.type ?? null,
+      insulinType: dose?.insulinType ?? null,
+      recommendedUnits: dose?.recommendedUnits ?? null,
+      manualOverride: dose?.manualOverride ?? false,
+      loggedBy: food.authorName ?? dose?.authorName ?? null,
       preGlucose: pre,
       postGlucose: post,
       direction: directionOf(pre, post),
@@ -353,6 +371,10 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     postGlucose: m.postGlucose,
     units: m.units,
     doseType: m.doseType,
+    insulinType: m.insulinType,
+    recommendedUnits: m.recommendedUnits,
+    manualOverride: m.manualOverride,
+    loggedBy: m.loggedBy,
     note: m.name,
     fromPhoto: m.fromPhoto,
   }));
@@ -360,16 +382,28 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     if (usedInsulinIds.has(l.id)) continue;
     const t = ms(l.timestamp);
     const isCorr = l.type === "correction";
+    const label =
+      l.type === "correction"
+        ? "Correction"
+        : l.type === "basal"
+          ? "Basal"
+          : l.type === "manual"
+            ? "Manual dose"
+            : "Bolus";
     events.push({
       id: `ins-${l.id}`,
       timestamp: l.timestamp,
       kind: isCorr ? "correction" : "insulin",
-      label: isCorr ? "Correction" : l.type === "manual" ? "Basal / Manual" : "Insulin",
+      label,
       carbs: null,
       preGlucose: readingBefore(readings, t),
       postGlucose: isCorr ? readingAfter(readings, t) : null,
       units: l.units,
       doseType: l.type,
+      insulinType: l.insulinType ?? null,
+      recommendedUnits: l.recommendedUnits ?? null,
+      manualOverride: l.manualOverride ?? false,
+      loggedBy: l.authorName ?? null,
       note: l.note ?? "",
       fromPhoto: false,
     });

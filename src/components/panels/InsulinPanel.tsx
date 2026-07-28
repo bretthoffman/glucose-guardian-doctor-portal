@@ -65,7 +65,8 @@ const SLOT_META: Record<MealSlot, { Icon: typeof Sun; color: string; ring: strin
 const DOSE_BADGE: Record<DoseType, { label: string; cls: string }> = {
   bolus: { label: "Bolus", cls: "bg-primary/15 text-primary border-primary/30" },
   correction: { label: "Correction", cls: "bg-purple-500/15 text-purple-300 border-purple-500/30" },
-  manual: { label: "Basal", cls: "bg-secondary text-muted-foreground border-border" },
+  basal: { label: "Basal", cls: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+  manual: { label: "Manual", cls: "bg-secondary text-muted-foreground border-border" },
 };
 
 function clock(timestamp: string): string {
@@ -862,7 +863,28 @@ function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
         <span className="text-muted-foreground"> / </span>
         <Glucose value={e.postGlucose} zones={review.zones} />
       </td>
-      <td className="px-4 py-2.5 text-foreground">{e.units != null ? `${e.units}` : "–"}</td>
+      <td className="px-4 py-2.5 text-foreground">
+        {e.units != null ? (
+          <div className="min-w-0">
+            <span className="text-foreground">{e.units}u</span>
+            {e.manualOverride && e.recommendedUnits != null && (
+              <span
+                className="ml-1.5 text-[10px] text-amber-600"
+                title={`Recommended ${e.recommendedUnits}u — caregiver adjusted the dose`}
+              >
+                (rec {e.recommendedUnits}u)
+              </span>
+            )}
+            {e.insulinType && (
+              <span className="block text-[11px] text-muted-foreground truncate max-w-[130px]">
+                {e.insulinType}
+              </span>
+            )}
+          </div>
+        ) : (
+          "–"
+        )}
+      </td>
       <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
         {e.kind === "meal" ? ratioText(review.ratios.carbRatio) : "–"} |{" "}
         {ratioText(review.ratios.correctionFactor)}
@@ -876,7 +898,10 @@ function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
           <span className="text-muted-foreground">–</span>
         )}
       </td>
-      <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">{e.note || "–"}</td>
+      <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">
+        {e.note || "–"}
+        {e.loggedBy && <span className="block text-[11px] opacity-80">logged by {e.loggedBy}</span>}
+      </td>
     </tr>
   );
 }

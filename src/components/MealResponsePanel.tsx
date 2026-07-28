@@ -219,7 +219,11 @@ export function MealResponsePanel({
               <span className="text-muted-foreground text-sm">none</span>
             )
           }
-          sub={meal.doseType ?? undefined}
+          sub={
+            meal.manualOverride && meal.recommendedUnits != null
+              ? `rec ${meal.recommendedUnits}u · adjusted`
+              : (meal.insulinType ?? meal.doseType ?? undefined)
+          }
         />
         <Stat label="Meal time" value={formatTime(meal.timestamp)} />
         <Stat
@@ -237,6 +241,36 @@ export function MealResponsePanel({
           sub={pre ? formatTime(pre.timestamp) : "no reading within 30 min"}
         />
       </div>
+
+      {/* Context chips — macros, absorption, insulin brand, override, who logged (when present) */}
+      {(() => {
+        const chips: string[] = [];
+        if (meal.insulinType) chips.push(meal.insulinType);
+        if (meal.manualOverride && meal.recommendedUnits != null)
+          chips.push(`Dose adjusted from recommended ${meal.recommendedUnits}u`);
+        if (meal.fatGrams != null || meal.proteinGrams != null) {
+          const macros = [
+            meal.fatGrams != null ? `${meal.fatGrams}g fat` : null,
+            meal.proteinGrams != null ? `${meal.proteinGrams}g protein` : null,
+          ].filter(Boolean);
+          if (macros.length) chips.push(macros.join(" · "));
+        }
+        if (meal.absorption) chips.push(`${meal.absorption} absorption`);
+        if (meal.loggedBy) chips.push(`Logged by ${meal.loggedBy}`);
+        if (!chips.length) return null;
+        return (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {chips.map((c, i) => (
+              <span
+                key={i}
+                className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-secondary/40 text-muted-foreground"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Response + correction */}
       <div className="grid grid-cols-1 2xl:grid-cols-[1fr_auto] gap-3 mt-3">

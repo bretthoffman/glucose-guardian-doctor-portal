@@ -192,6 +192,32 @@ export function MealDetailDialog({
           </div>
         </div>
 
+        {(() => {
+          const chips: string[] = [];
+          if (food.fatGrams != null || food.proteinGrams != null) {
+            const macros = [
+              food.fatGrams != null ? `${food.fatGrams}g fat` : null,
+              food.proteinGrams != null ? `${food.proteinGrams}g protein` : null,
+            ].filter(Boolean);
+            if (macros.length) chips.push(macros.join(" · "));
+          }
+          if (food.absorption) chips.push(`${food.absorption} absorption`);
+          if (food.authorName) chips.push(`Logged by ${food.authorName}`);
+          if (!chips.length) return null;
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              {chips.map((c, i) => (
+                <span
+                  key={i}
+                  className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-secondary/40 text-muted-foreground"
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Post-meal glucose response */}
         <div>
           <p className="text-xs font-medium text-foreground mb-2">Glucose response</p>
