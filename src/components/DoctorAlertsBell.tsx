@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, Bell, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Clock, MessageSquare, XCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useDoctorAlerts } from "@/data/doctor-data";
 import { formatDate, formatTime } from "@/lib/utils";
@@ -11,6 +11,7 @@ const KIND_META: Record<string, { icon: typeof Bell; cls: string }> = {
   stale_data: { icon: Clock, cls: "text-amber-600" },
   decision_approved: { icon: CheckCircle2, cls: "text-success" },
   decision_declined: { icon: XCircle, cls: "text-amber-600" },
+  nurse_message: { icon: MessageSquare, cls: "text-primary" },
 };
 
 /**
@@ -66,7 +67,9 @@ export function DoctorAlertsBell() {
                   key={a.id}
                   onClick={() => {
                     setOpen(false);
-                    setLocation(`/patient/${a.accessCode}/overview`);
+                    setLocation(
+                      `/patient/${a.accessCode}/${a.kind === "nurse_message" ? "messages" : "overview"}`,
+                    );
                   }}
                   className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-secondary/60 border-b border-border/60 last:border-b-0 ${
                     a.readAt ? "" : "bg-primary/5"

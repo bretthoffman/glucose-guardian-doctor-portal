@@ -39,6 +39,12 @@ export function CaregiverTitlesProvider({
   return <CaregiverTitlesContext.Provider value={value}>{children}</CaregiverTitlesContext.Provider>;
 }
 
+/** This doctor's title entry for a name, if they've set one. */
+export function useCaregiverTitleLookup(): (name: string) => CaregiverTitleEntry | undefined {
+  const ctx = useContext(CaregiverTitlesContext);
+  return (name) => ctx?.titleFor(name);
+}
+
 /** "Holly (Mother)" as plain text — for exports and tooltips. */
 export function useCaregiverLabel(): (name: string) => string {
   const ctx = useContext(CaregiverTitlesContext);

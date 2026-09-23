@@ -278,6 +278,9 @@ export function useSetCaregiverTitle(accessCode: string): {
           { method: "PUT", body: JSON.stringify({ name, title, detail }) },
         );
         queryClient.setQueryData(key, r.titles ?? []);
+        // Tagging someone School Nurse is what opens (or closes) a doctor chat with them.
+        void queryClient.invalidateQueries({ queryKey: careCircleKey(accessCode) });
+        void queryClient.invalidateQueries({ queryKey: nurseThreadsKey(accessCode) });
       } catch (e) {
         queryClient.setQueryData(key, previous ?? null);
         if (e instanceof ApiError && (e.status === 404 || e.status === 405 || e.status === 503)) {
@@ -291,6 +294,107 @@ export function useSetCaregiverTitle(accessCode: string): {
     [accessCode, queryClient],
   );
   return { save };
+}
+
+// ---- Care Circle roster + school-nurse chats ----
+
+export interface CareCircleMember {
+  /** Opaque id — never an access code. */
+  id: string;
+  name: string;
+  kind: "owner" | "patient" | "co_guardian" | "caregiver_code" | "patient_device";
+  /** Nurse (caregiver) accounts signed in with this access code. */
+  accounts: { name: string; organization?: string }[];
+  lastUsedAt?: number;
+  /** "parents" = the guardian thread, "nurse" = a doctor chat in the app, null = not messageable. */
+  messaging: "parents" | "nurse" | null;
+}
+
+export interface NurseThread {
+  codeId: string;
+  name: string;
+  messages: { id: string; text: string; fromDoctor: boolean; senderName: string; createdAt: number }[];
+  unread: number;
+}
+
+const careCircleKey = (accessCode: string) => ["care-circle", accessCode];
+const nurseThreadsKey = (accessCode: string) => ["nurse-threads", accessCode];
+
+/** Who is in the patient's Care Circle now. `null` until the backend routes are deployed. */
+export function useCareCircle(accessCode: string): CareCircleMember[] | null {
+  const query = useQuery({
+    queryKey: careCircleKey(accessCode),
+    enabled: !!accessCode,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    retry: false,
+    queryFn: async (): Promise<CareCircleMember[] | null> => {
+      try {
+        const r = await customFetch<{ members?: CareCircleMember[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/care-circle`,
+        );
+        return r.members ?? [];
+      } catch {
+        return null;
+      }
+    },
+  });
+  return query.data ?? null;
+}
+
+/** This doctor's chats with the circle's school nurses, polled like the guardian thread. */
+export function useNurseThreads(accessCode: string): NurseThread[] | null {
+  const query = useQuery({
+    queryKey: nurseThreadsKey(accessCode),
+    enabled: !!accessCode,
+    refetchInterval: 10_000,
+    retry: false,
+    queryFn: async (): Promise<NurseThread[] | null> => {
+      try {
+        const r = await customFetch<{ threads?: NurseThread[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/nurse-threads`,
+        );
+        return r.threads ?? [];
+      } catch {
+        return null;
+      }
+    },
+  });
+  return query.data ?? null;
+}
+
+export function useNurseMessaging(accessCode: string): {
+  send: (codeId: string, text: string) => Promise<void>;
+  markRead: (codeId: string) => void;
+} {
+  const queryClient = useQueryClient();
+  const base = `/api/doctor/patient/${encodeURIComponent(accessCode)}/nurse-threads`;
+  const send = useCallback(
+    async (codeId: string, text: string) => {
+      try {
+        await customFetch(`${base}/${encodeURIComponent(codeId)}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+          throw new Error("Only caregivers you've tagged as School Nurse can be messaged.");
+        }
+        throw new Error("Message not sent. Try again.");
+      }
+      await queryClient.invalidateQueries({ queryKey: nurseThreadsKey(accessCode) });
+    },
+    [accessCode, base, queryClient],
+  );
+  const markRead = useCallback(
+    (codeId: string) => {
+      void customFetch(`${base}/${encodeURIComponent(codeId)}/read`, { method: "POST" })
+        .then(() => queryClient.invalidateQueries({ queryKey: nurseThreadsKey(accessCode) }))
+        .catch(() => {});
+    },
+    [accessCode, base, queryClient],
+  );
+  return { send, markRead };
 }
 
 // ---- Doctor alerts (bell feed) ----

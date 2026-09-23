@@ -36,6 +36,7 @@ import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
 import { AssistantWidget } from "@/components/AssistantWidget";
 import { CaregiverTitlesProvider } from "@/components/CaregiverName";
+import { CareCircleSidebar } from "@/components/CareCircleSidebar";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
@@ -285,7 +286,8 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto" data-tour="nav">
+        <div className="flex-1 overflow-y-auto">
+        <nav className="p-3 space-y-1" data-tour="nav">
           {TABS.filter((t) => t.inNav).map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -312,6 +314,8 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
             );
           })}
         </nav>
+        <CareCircleSidebar accessCode={detail.accessCode} />
+        </div>
 
         <div className="p-3 border-t border-border space-y-1">
           {doctor && (
