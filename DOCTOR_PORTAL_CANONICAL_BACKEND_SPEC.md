@@ -1,5 +1,13 @@
 # Doctor portal — canonical backend specification
 
+> **⚠️ SUPERSEDED (historical design, 2026-06-25) — not what was built.** The portal never adopted
+> the Clerk + direct-Convex design below, and none of its proposed function names exist. As
+> implemented: the portal calls the shared Glucose Guardian **api-server** (REST, via
+> `VITE_API_BASE_URL` → `https://glucose-guardian-ashen.vercel.app`) using the backend's own doctor
+> Bearer-token auth (`convex/doctorAccounts.ts`, `convex/doctor.ts`, `convex/doctorAlerts.ts`). The
+> api-server's `CONVEX_URL` points at **production, `polished-badger-189`**. The dev deployment and
+> Clerk dev instance named below are no longer live for the portal.
+
 **Implement this in the canonical backend repository, not in the doctor portal.**
 
 - Backend repo: https://github.com/bretthoffman/glucose_guardian
