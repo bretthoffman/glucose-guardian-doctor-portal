@@ -1,11 +1,19 @@
 import { useMemo } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Minus, Utensils } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Camera, Minus, Utensils } from "lucide-react";
 import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { SLOT_LABEL, type DayMeal, type DayReview } from "@/lib/day-review";
 import { glucoseStatus, STATUS_META } from "@/lib/glucose-metrics";
 import { useGlucoseHistory } from "@/data/doctor-data";
 import { DayTimelineChart } from "@/components/DayTimelineChart";
 import { formatTime } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AFTER_MARK_MIN,
   AFTER_TOLERANCE_MIN,
@@ -72,23 +80,20 @@ function AfterCell({
 }
 
 /**
- * "Selected Meal" view for the Daily Review: replaces the Glucose & Insulin Timeline card when a
- * meal is clicked. Full meal info + the glucose response at 15/30/60 min, and the timeline zoomed
- * to the window around the meal. Readings come from the full-history store so the response works
- * for any meal, not just those in the ~1-day sync snapshot.
+ * The body of the meal pop-out: full meal info, before/2 h after, the glucose response at
+ * 15/30/60 min, and the timeline zoomed to the window around the meal. Readings come from the
+ * full-history store so the response works for any meal, not just those in the ~1-day snapshot.
  */
-export function MealResponsePanel({
+function MealDetailBody({
   meal,
   food,
   snapshot,
   review,
-  onBack,
 }: {
   meal: DayMeal;
   food?: FoodLogEntry;
   snapshot: PatientSnapshot;
   review: DayReview;
-  onBack: () => void;
 }) {
   const t = ms(meal.timestamp);
   const afterWindowEnd = t + (AFTER_MARK_MIN + AFTER_TOLERANCE_MIN) * MIN;
@@ -151,47 +156,52 @@ export function MealResponsePanel({
   );
   const photo = food?.photoDataUri?.startsWith("data:image/") ? food.photoDataUri : null;
 
+  const when = new Date(meal.timestamp).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
   return (
-    <div className="bg-card border border-border rounded-2xl p-5">
+    <div className="min-w-0">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+      <div className="flex items-start gap-3 flex-wrap mb-3 pr-8">
         <div className="flex items-start gap-3 min-w-0">
-          {photo ? (
-            <img
-              src={photo}
-              alt={meal.name}
-              className="w-12 h-12 rounded-xl object-cover border border-border shrink-0"
-            />
-          ) : (
-            <span className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
-              <Utensils className="w-4 h-4 text-primary" />
-            </span>
-          )}
+          <span className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+            <Utensils className="w-4 h-4 text-primary" />
+          </span>
           <div className="min-w-0">
-            <h3 className="font-medium text-foreground">
-              Selected Meal: <span className="text-primary">{SLOT_LABEL[meal.slot]}</span>
+            <DialogTitle className="font-medium text-foreground text-base">
+              <span className="text-primary">{SLOT_LABEL[meal.slot]}</span>
               <span className="text-sm font-normal text-muted-foreground ml-2">
-                {formatTime(meal.timestamp)}
+                {when} · {formatTime(meal.timestamp)}
               </span>
-            </h3>
-            <p className="text-sm text-foreground mt-0.5 break-words">
+            </DialogTitle>
+            <DialogDescription className="text-sm text-foreground mt-0.5 break-words">
               {meal.name}
               {meal.fromPhoto && !photo && (
                 <Camera className="w-3.5 h-3.5 text-muted-foreground inline ml-1.5 -mt-0.5" />
               )}
-            </p>
+            </DialogDescription>
           </div>
         </div>
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Timeline
-        </button>
       </div>
 
+      {photo ? (
+        <img
+          src={photo}
+          alt={meal.name}
+          className="w-full max-h-80 object-contain rounded-xl border border-border bg-black/20 mb-3"
+        />
+      ) : meal.fromPhoto ? (
+        <p className="mb-3 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-2.5 text-xs text-muted-foreground flex items-center gap-2">
+          <Camera className="w-4 h-4 shrink-0" />
+          This meal was logged with a photo in the app. Photos show here once the app uploads them.
+        </p>
+      ) : null}
+
       {/* Stat strip */}
-      <div className="grid grid-cols-2 2xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat
           label="Carbs"
           value={
@@ -290,7 +300,7 @@ export function MealResponsePanel({
       <WhoLogged mealBy={meal.mealBy} doseBy={meal.doseBy} className="mt-3 text-xs" />
 
       {/* Response + correction */}
-      <div className="grid grid-cols-1 2xl:grid-cols-[1fr_auto] gap-3 mt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 mt-3">
         <div className="rounded-xl border border-border bg-secondary/30 py-2">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground text-center mb-1">
             Glucose after meal
@@ -301,7 +311,7 @@ export function MealResponsePanel({
             <AfterCell label="1h" reading={at60} delta={d(at60)} zones={review.zones} />
           </div>
         </div>
-        <div className="rounded-xl border border-border bg-secondary/30 p-3 text-center lg:w-32">
+        <div className="rounded-xl border border-border bg-secondary/30 p-3 text-center sm:w-32">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Correction</p>
           <p className="text-lg font-display font-bold text-foreground mt-1">
             {correction != null ? `${correction}u` : "—"}
@@ -362,6 +372,41 @@ export function MealResponsePanel({
           15m/30m/1h; "—" means no CGM reading near that mark.
         </span>
       </p>
+
+      <div className="flex justify-end mt-4">
+        <DialogClose asChild>
+          <Button variant="outline" size="sm">
+            Close
+          </Button>
+        </DialogClose>
+      </div>
     </div>
   );
 }
+
+/**
+ * Meal detail pop-out, opened by clicking a meal anywhere (Daily Review meal cards and Event Log,
+ * Overview Food Log). Close with the X, the Close button, Esc, or by clicking outside.
+ */
+export function MealDetailModal({
+  meal,
+  food,
+  snapshot,
+  review,
+  onClose,
+}: {
+  meal: DayMeal | null;
+  food?: FoodLogEntry;
+  snapshot: PatientSnapshot;
+  review: DayReview | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={!!meal && !!review} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto bg-card">
+        {meal && review && <MealDetailBody meal={meal} food={food} snapshot={snapshot} review={review} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+

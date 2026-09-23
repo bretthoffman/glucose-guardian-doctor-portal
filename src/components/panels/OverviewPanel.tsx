@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowRight,
@@ -23,7 +23,8 @@ import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-re
 import { formatDate, formatTime, getGlucoseColor } from "@/lib/utils";
 import { readLabA1c } from "@/data/doctor-data";
 import type { PatientDetail } from "@/data/contracts";
-import { MealDetailDialog } from "@/components/MealDetailDialog";
+import { MealDetailModal } from "@/components/MealResponsePanel";
+import { buildDayReview, localDayKey } from "@/lib/day-review";
 import { DoseCalculationCard } from "@/components/DoseCalculationCard";
 import { CaregiverName } from "@/components/CaregiverName";
 import {
@@ -219,6 +220,12 @@ export function OverviewPanel({
   const a1cNum = m.a1c ? Number(m.a1c) : null;
   const labA1c = readLabA1c(data);
   const [mealDetail, setMealDetail] = useState<FoodLogEntry | null>(null);
+  // The same meal pop-out as the Daily Review, built from that meal's day.
+  const mealReview = useMemo(
+    () => (mealDetail ? buildDayReview(data, localDayKey(new Date(mealDetail.timestamp))) : null),
+    [mealDetail, data],
+  );
+  const mealForDetail = mealReview?.meals.find((m) => m.id === mealDetail?.id) ?? null;
   const go = (tab: string) => setLocation(`/patient/${accessCode}/${tab}`);
   const editLink = (
     <button onClick={() => go("orders")} className="text-xs text-primary hover:underline">
@@ -607,11 +614,12 @@ export function OverviewPanel({
         </>
       )}
 
-      <MealDetailDialog
-        food={mealDetail}
+      <MealDetailModal
+        meal={mealForDetail}
+        food={mealDetail ?? undefined}
         snapshot={data}
-        open={!!mealDetail}
-        onOpenChange={(o) => !o && setMealDetail(null)}
+        review={mealReview}
+        onClose={() => setMealDetail(null)}
       />
     </div>
   );

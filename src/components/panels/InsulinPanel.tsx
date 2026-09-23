@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
-import { MealResponsePanel } from "@/components/MealResponsePanel";
+import { MealDetailModal } from "@/components/MealResponsePanel";
 import {
   buildDayReview,
   buildDayChips,
@@ -417,7 +417,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
   const todayKey = localDayKey(new Date());
 
   const [selectedKey, setSelectedKey] = useState(() => defaultDayKey(data));
-  // Clicking a meal swaps the Glucose & Insulin Timeline for that meal's response view.
+  // The meal whose detail pop-out is open (from a meal card or an Event Log row).
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
   useEffect(() => setSelectedMealId(null), [selectedKey]);
   const [winStart, setWinStart] = useState(() => {
@@ -805,17 +805,8 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
             </div>
           </div>
 
-          {/* Chart + event log — the timeline swaps for the selected meal's response view */}
+          {/* Chart + event log (clicking a meal opens its detail in a pop-out) */}
           <div className="space-y-5 min-w-0">
-            {selectedMeal ? (
-              <MealResponsePanel
-                meal={selectedMeal}
-                food={(data.foodLog ?? []).find((f) => f.id === selectedMeal.id)}
-                snapshot={data}
-                review={review}
-                onBack={() => setSelectedMealId(null)}
-              />
-            ) : (
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                 <h3 className="font-medium text-foreground">Glucose &amp; Insulin Timeline</h3>
@@ -850,7 +841,6 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                 height={320}
               />
             </div>
-            )}
 
             {/* Event log */}
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -875,7 +865,12 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                     </thead>
                     <tbody>
                       {review.events.map((e) => (
-                        <EventRow key={e.id} e={e} review={review} />
+                        <EventRow
+                          key={e.id}
+                          e={e}
+                          review={review}
+                          onOpen={e.kind === "meal" ? () => setSelectedMealId(e.id.slice("meal-".length)) : undefined}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -1003,6 +998,14 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
           </button>
         </div>
       </div>
+
+      <MealDetailModal
+        meal={selectedMeal ?? null}
+        food={selectedMeal ? (data.foodLog ?? []).find((f) => f.id === selectedMeal.id) : undefined}
+        snapshot={data}
+        review={review}
+        onClose={() => setSelectedMealId(null)}
+      />
     </div>
   );
 }
@@ -1028,11 +1031,15 @@ function KeyVal({ label, value }: { label: string; value: string }) {
   );
 }
 
-function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
+function EventRow({ e, review, onOpen }: { e: DayEvent; review: DayReview; onOpen?: () => void }) {
   const badge = e.doseType ? DOSE_BADGE[e.doseType] : null;
   const EventIcon = e.kind === "correction" ? Syringe : e.kind === "insulin" ? Syringe : Utensils;
   return (
-    <tr className="border-t border-border/50 hover:bg-secondary/20 transition-colors">
+    <tr
+      onClick={onOpen}
+      title={onOpen ? "View meal details" : undefined}
+      className={`border-t border-border/50 hover:bg-secondary/20 transition-colors ${onOpen ? "cursor-pointer" : ""}`}
+    >
       <td className="px-4 py-2.5 whitespace-nowrap text-foreground">{clock(e.timestamp)}</td>
       <td className="px-4 py-2.5 whitespace-nowrap">
         <span className="flex items-center gap-1.5 text-foreground">
