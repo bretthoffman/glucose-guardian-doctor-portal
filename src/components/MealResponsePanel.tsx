@@ -1,39 +1,25 @@
 import { useMemo } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Minus, Utensils } from "lucide-react";
-import type { CGMReading, FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { SLOT_LABEL, type DayMeal, type DayReview } from "@/lib/day-review";
 import { glucoseStatus, STATUS_META } from "@/lib/glucose-metrics";
 import { useGlucoseHistory } from "@/data/doctor-data";
 import { DayTimelineChart } from "@/components/DayTimelineChart";
 import { formatTime } from "@/lib/utils";
+import {
+  AFTER_MARK_MIN,
+  AFTER_TOLERANCE_MIN,
+  BEFORE_WINDOW_MIN,
+  describeOffset,
+  readingAfter,
+  readingBefore,
+  readingNearMark,
+  type EventReading,
+} from "@/lib/meal-glucose";
+import { WhoLogged } from "@/components/CaregiverName";
 
 const MIN = 60_000;
 const ms = (t: string) => new Date(t).getTime();
-
-/** Nearest reading at/just before `t` (within 30 min) — the pre-meal glucose. */
-function preMealReading(readings: CGMReading[], t: number): CGMReading | null {
-  let best: CGMReading | null = null;
-  for (const r of readings) {
-    const rt = ms(r.timestamp);
-    if (rt <= t && t - rt <= 30 * MIN && (!best || rt > ms(best.timestamp))) best = r;
-  }
-  return best;
-}
-
-/** Reading closest to `t + offsetMin`, within ±12 min of that mark. */
-function readingNear(readings: CGMReading[], t: number, offsetMin: number): number | null {
-  const target = t + offsetMin * MIN;
-  let best: number | null = null;
-  let bestDist = Infinity;
-  for (const r of readings) {
-    const d = Math.abs(ms(r.timestamp) - target);
-    if (d <= 12 * MIN && d < bestDist) {
-      best = r.value;
-      bestDist = d;
-    }
-  }
-  return best;
-}
 
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   return (
@@ -47,15 +33,16 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 
 function AfterCell({
   label,
-  value,
+  reading,
   delta,
   zones,
 }: {
   label: string;
-  value: number | null;
+  reading: EventReading | null;
   delta: number | null;
   zones: DayReview["zones"];
 }) {
+  const value = reading?.value ?? null;
   const meta = value != null ? STATUS_META[glucoseStatus(value, zones)] : null;
   const Arrow = delta == null || delta === 0 ? Minus : delta > 0 ? ArrowUp : ArrowDown;
   return (
@@ -77,6 +64,9 @@ function AfterCell({
       ) : (
         <p className="text-[11px] text-muted-foreground">—</p>
       )}
+      <p className="text-[10px] text-muted-foreground">
+        {reading ? `at ${formatTime(reading.timestamp)}` : "no reading"}
+      </p>
     </div>
   );
 }
@@ -101,23 +91,25 @@ export function MealResponsePanel({
   onBack: () => void;
 }) {
   const t = ms(meal.timestamp);
-  const hist = useGlucoseHistory(snapshot.accessCode, t - 60 * MIN, t + 90 * MIN);
+  const afterWindowEnd = t + (AFTER_MARK_MIN + AFTER_TOLERANCE_MIN) * MIN;
+  const hist = useGlucoseHistory(snapshot.accessCode, t - 60 * MIN, afterWindowEnd);
 
   const readings = useMemo(() => {
     if (hist.readings?.length) return hist.readings;
     return (review.readings ?? []).filter((r) => {
       const rt = ms(r.timestamp);
-      return rt >= t - 60 * MIN && rt <= t + 90 * MIN;
+      return rt >= t - 60 * MIN && rt <= afterWindowEnd;
     });
-  }, [hist.readings, review.readings, t]);
+  }, [hist.readings, review.readings, t, afterWindowEnd]);
 
-  const pre = preMealReading(readings, t);
-  const at15 = readingNear(readings, t, 15);
-  const at30 = readingNear(readings, t, 30);
-  const at60 = readingNear(readings, t, 60);
-  const d = (v: number | null) => (v != null && pre ? v - pre.value : null);
+  const pre = readingBefore(readings, t);
+  const at15 = readingNearMark(readings, t, 15, 12);
+  const at30 = readingNearMark(readings, t, 30, 12);
+  const at60 = readingNearMark(readings, t, 60, 12);
+  const after2h = readingAfter(readings, t);
+  const d = (r: EventReading | null) => (r && pre ? r.value - pre.value : null);
 
-  const after = [at15, at30, at60].filter((v): v is number => v != null);
+  const after = [at15, at30, at60].filter((r): r is EventReading => r != null).map((r) => r.value);
   const peak = after.length ? Math.max(...after) : null;
   const change = pre && peak != null ? peak - pre.value : null;
 
@@ -152,7 +144,7 @@ export function MealResponsePanel({
     };
   }, [readings, t, review.zones]);
 
-  const domain: [number, number] = [t - 45 * MIN, t + 75 * MIN];
+  const domain: [number, number] = [t - 45 * MIN, t + (AFTER_MARK_MIN + 15) * MIN];
   const markers = useMemo(
     () => (review.markers ?? []).filter((m) => m.ts >= domain[0] && m.ts <= domain[1]),
     [review.markers, domain[0], domain[1]],
@@ -178,6 +170,9 @@ export function MealResponsePanel({
           <div className="min-w-0">
             <h3 className="font-medium text-foreground">
               Selected Meal: <span className="text-primary">{SLOT_LABEL[meal.slot]}</span>
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                {formatTime(meal.timestamp)}
+              </span>
             </h3>
             <p className="text-sm text-foreground mt-0.5 break-words">
               {meal.name}
@@ -225,9 +220,8 @@ export function MealResponsePanel({
               : (meal.insulinType ?? meal.doseType ?? undefined)
           }
         />
-        <Stat label="Meal time" value={formatTime(meal.timestamp)} />
         <Stat
-          label="Pre-meal"
+          label="Before meal"
           value={
             pre ? (
               <>
@@ -238,7 +232,29 @@ export function MealResponsePanel({
               <span className="text-muted-foreground text-sm">—</span>
             )
           }
-          sub={pre ? formatTime(pre.timestamp) : "no reading within 30 min"}
+          sub={
+            pre
+              ? `${formatTime(pre.timestamp)} · ${describeOffset(pre.offsetMin)}`
+              : `no reading in the ${BEFORE_WINDOW_MIN} min before`
+          }
+        />
+        <Stat
+          label="2 h after"
+          value={
+            after2h ? (
+              <>
+                {after2h.value}
+                <span className="text-xs font-normal text-muted-foreground ml-0.5">mg/dL</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground text-sm">—</span>
+            )
+          }
+          sub={
+            after2h
+              ? `${formatTime(after2h.timestamp)} · ${describeOffset(after2h.offsetMin)}`
+              : "no reading near the 2 h mark"
+          }
         />
       </div>
 
@@ -256,7 +272,6 @@ export function MealResponsePanel({
           if (macros.length) chips.push(macros.join(" · "));
         }
         if (meal.absorption) chips.push(`${meal.absorption} absorption`);
-        if (meal.loggedBy) chips.push(`Logged by ${meal.loggedBy}`);
         if (!chips.length) return null;
         return (
           <div className="flex flex-wrap gap-1.5 mt-3">
@@ -272,6 +287,8 @@ export function MealResponsePanel({
         );
       })()}
 
+      <WhoLogged mealBy={meal.mealBy} doseBy={meal.doseBy} className="mt-3 text-xs" />
+
       {/* Response + correction */}
       <div className="grid grid-cols-1 2xl:grid-cols-[1fr_auto] gap-3 mt-3">
         <div className="rounded-xl border border-border bg-secondary/30 py-2">
@@ -279,9 +296,9 @@ export function MealResponsePanel({
             Glucose after meal
           </p>
           <div className="grid grid-cols-3">
-            <AfterCell label="15m" value={at15} delta={d(at15)} zones={review.zones} />
-            <AfterCell label="30m" value={at30} delta={d(at30)} zones={review.zones} />
-            <AfterCell label="1h" value={at60} delta={d(at60)} zones={review.zones} />
+            <AfterCell label="15m" reading={at15} delta={d(at15)} zones={review.zones} />
+            <AfterCell label="30m" reading={at30} delta={d(at30)} zones={review.zones} />
+            <AfterCell label="1h" reading={at60} delta={d(at60)} zones={review.zones} />
           </div>
         </div>
         <div className="rounded-xl border border-border bg-secondary/30 p-3 text-center lg:w-32">
@@ -320,7 +337,7 @@ export function MealResponsePanel({
           >
             {change != null ? `${change > 0 ? "+" : ""}${change} mg/dL` : "—"}
           </p>
-          <p className="text-[11px] text-muted-foreground">Pre-meal to peak (1h)</p>
+          <p className="text-[11px] text-muted-foreground">Before meal to peak (1h)</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -338,9 +355,11 @@ export function MealResponsePanel({
       <p className="text-[11px] text-muted-foreground border-t border-border/60 pt-3 mt-3 flex items-start gap-1.5">
         <ArrowRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />
         <span>
-          Pre-meal is the CGM reading nearest the log time (within 30 min). 15m/30m/1h are the
-          readings closest to those marks (±12 min), with the change vs. pre-meal. Peak is the
-          highest of the three; intervals with no nearby CGM reading show "—".
+          Before meal is the last CGM reading before the meal was logged (within 30 min). 15m,
+          30m and 1h are the readings closest to those marks (±12 min), each with the time it was
+          taken and the change from before meal. 2 h after is the reading closest to two hours
+          after the meal (±30 min) — the same value the meal card shows. Peak is the highest of
+          15m/30m/1h; "—" means no CGM reading near that mark.
         </span>
       </p>
     </div>

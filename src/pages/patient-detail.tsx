@@ -35,6 +35,7 @@ import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
 import { AssistantWidget } from "@/components/AssistantWidget";
+import { CaregiverTitlesProvider } from "@/components/CaregiverName";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
@@ -207,6 +208,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   const gstatus = gm.status ? STATUS_META[gm.status] : null;
 
   return (
+    <CaregiverTitlesProvider accessCode={detail.accessCode}>
     <div className="flex h-screen bg-background overflow-hidden">
       <aside className="w-64 bg-card border-r border-border flex flex-col shrink-0">
         <div className="p-4 flex items-center gap-2.5 border-b border-border/60">
@@ -404,6 +406,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
       <DoctorProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       <AssistantWidget accessCode={detail.accessCode} patientName={name} />
     </div>
+    </CaregiverTitlesProvider>
   );
 }
 

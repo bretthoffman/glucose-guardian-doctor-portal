@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Camera, Clock, Droplet, Minus, Syringe, Utensils } from "lucide-react";
-import type { CGMReading, FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
+import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import {
   Dialog,
   DialogContent,
@@ -10,39 +10,20 @@ import {
 import { glucoseStatus, STATUS_META, zonesFromSnapshot } from "@/lib/glucose-metrics";
 import { useGlucoseHistory } from "@/data/doctor-data";
 import { formatDate, formatTime } from "@/lib/utils";
+import {
+  AFTER_MARK_MIN,
+  AFTER_TOLERANCE_MIN,
+  BEFORE_WINDOW_MIN,
+  describeOffset,
+  readingAfter,
+  readingBefore,
+  readingNearMark,
+  type EventReading,
+} from "@/lib/meal-glucose";
+import { WhoLogged } from "@/components/CaregiverName";
 
 const MIN = 60_000;
 const ms = (t: string) => new Date(t).getTime();
-
-/** Nearest reading at/just before `t` (within `windowMin`) — the glucose "at the meal". */
-function readingBefore(readings: CGMReading[], t: number, windowMin = 30): number | null {
-  let best: CGMReading | null = null;
-  for (const r of readings) {
-    const rt = ms(r.timestamp);
-    if (rt <= t && t - rt <= windowMin * MIN && (!best || rt > ms(best.timestamp))) best = r;
-  }
-  return best?.value ?? null;
-}
-
-/** Reading closest to `t + offsetMin` (within `windowMin` of that target), else null. */
-function readingNear(
-  readings: CGMReading[],
-  t: number,
-  offsetMin: number,
-  windowMin = 12,
-): number | null {
-  const target = t + offsetMin * MIN;
-  let best: CGMReading | null = null;
-  let bestDist = Infinity;
-  for (const r of readings) {
-    const d = Math.abs(ms(r.timestamp) - target);
-    if (d <= windowMin * MIN && d < bestDist) {
-      best = r;
-      bestDist = d;
-    }
-  }
-  return best?.value ?? null;
-}
 
 const CONFIDENCE_CHIP: Record<string, string> = {
   high: "bg-success/15 text-success border-success/30",
@@ -52,15 +33,16 @@ const CONFIDENCE_CHIP: Record<string, string> = {
 
 function TrendCell({
   label,
-  value,
+  reading,
   baseline,
   snapshot,
 }: {
   label: string;
-  value: number | null;
+  reading: EventReading | null;
   baseline: number | null;
   snapshot: PatientSnapshot;
 }) {
+  const value = reading?.value ?? null;
   const zones = zonesFromSnapshot(snapshot);
   const meta = value != null ? STATUS_META[glucoseStatus(value, zones)] : null;
   const delta = value != null && baseline != null ? value - baseline : null;
@@ -81,8 +63,11 @@ function TrendCell({
           {delta === 0 ? "0" : `${delta > 0 ? "+" : "−"}${Math.abs(delta)}`}
         </p>
       ) : (
-        <p className="text-[11px] text-muted-foreground">{label === "At meal" ? "mg/dL" : "—"}</p>
+        <p className="text-[11px] text-muted-foreground">{baseline == null ? "mg/dL" : "—"}</p>
       )}
+      <p className="text-[10px] text-muted-foreground">
+        {reading ? formatTime(reading.timestamp) : "no reading"}
+      </p>
     </div>
   );
 }
@@ -107,18 +92,25 @@ export function MealDetailDialog({
   // for ANY meal, not just those inside the ~1-day sync snapshot. Hook runs unconditionally (before
   // the null-guard) and disables itself when there's no meal open. Falls back to snapshot readings.
   const mealMs = food ? ms(food.timestamp) : 0;
-  const hist = useGlucoseHistory(snapshot.accessCode, mealMs - 45 * MIN, mealMs + 90 * MIN);
+  const hist = useGlucoseHistory(
+    snapshot.accessCode,
+    mealMs - 45 * MIN,
+    mealMs + (AFTER_MARK_MIN + AFTER_TOLERANCE_MIN) * MIN,
+  );
 
   if (!food) return null;
   const t = mealMs;
   const readings = hist.readings?.length ? hist.readings : (snapshot.glucoseReadings ?? []);
-  const atMeal = readingBefore(readings, t);
-  const at15 = readingNear(readings, t, 15);
-  const at30 = readingNear(readings, t, 30);
-  const at60 = readingNear(readings, t, 60);
-  const peak = [at15, at30, at60].filter((v): v is number => v != null);
+  const before = readingBefore(readings, t);
+  const at15 = readingNearMark(readings, t, 15, 12);
+  const at30 = readingNearMark(readings, t, 30, 12);
+  const at60 = readingNearMark(readings, t, 60, 12);
+  const after2h = readingAfter(readings, t);
+  const atMeal = before?.value ?? null;
+  const peak = [at15, at30, at60].filter((r): r is EventReading => r != null).map((r) => r.value);
   const maxAfter = peak.length ? Math.max(...peak) : null;
   const excursion = atMeal != null && maxAfter != null ? maxAfter - atMeal : null;
+  const dose = (snapshot.insulinLog ?? []).find((l) => l.foodLogId === food.id);
   const photo = food.photoDataUri?.startsWith("data:image/") ? food.photoDataUri : null;
 
   return (
@@ -202,7 +194,6 @@ export function MealDetailDialog({
             if (macros.length) chips.push(macros.join(" · "));
           }
           if (food.absorption) chips.push(`${food.absorption} absorption`);
-          if (food.authorName) chips.push(`Logged by ${food.authorName}`);
           if (!chips.length) return null;
           return (
             <div className="flex flex-wrap gap-1.5">
@@ -218,15 +209,35 @@ export function MealDetailDialog({
           );
         })()}
 
+        <WhoLogged mealBy={food.authorName} doseBy={dose?.authorName} className="text-xs" />
+
         {/* Post-meal glucose response */}
         <div>
           <p className="text-xs font-medium text-foreground mb-2">Glucose response</p>
           <div className="grid grid-cols-4 gap-2">
-            <TrendCell label="At meal" value={atMeal} baseline={null} snapshot={snapshot} />
-            <TrendCell label="+15 min" value={at15} baseline={atMeal} snapshot={snapshot} />
-            <TrendCell label="+30 min" value={at30} baseline={atMeal} snapshot={snapshot} />
-            <TrendCell label="+1 hr" value={at60} baseline={atMeal} snapshot={snapshot} />
+            <TrendCell label="Before" reading={before} baseline={null} snapshot={snapshot} />
+            <TrendCell label="+15 min" reading={at15} baseline={atMeal} snapshot={snapshot} />
+            <TrendCell label="+30 min" reading={at30} baseline={atMeal} snapshot={snapshot} />
+            <TrendCell label="+1 hr" reading={at60} baseline={atMeal} snapshot={snapshot} />
           </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {before ? (
+              <>
+                Before meal: <span className="text-foreground">{before.value} mg/dL</span> at{" "}
+                {formatTime(before.timestamp)} ({describeOffset(before.offsetMin)}).{" "}
+              </>
+            ) : (
+              <>No reading in the {BEFORE_WINDOW_MIN} min before the meal. </>
+            )}
+            {after2h ? (
+              <>
+                2 h after: <span className="text-foreground">{after2h.value} mg/dL</span> at{" "}
+                {formatTime(after2h.timestamp)} ({describeOffset(after2h.offsetMin)}).
+              </>
+            ) : (
+              <>No reading near the 2 h mark.</>
+            )}
+          </p>
           {excursion != null && (
             <p className="text-xs text-muted-foreground mt-2">
               Glucose {excursion > 0 ? "rose" : excursion < 0 ? "fell" : "held steady"}
@@ -237,10 +248,11 @@ export function MealDetailDialog({
         </div>
 
         <p className="text-[11px] text-muted-foreground border-t border-border/60 pt-3">
-          "At meal" is the CGM reading nearest the log time (within 30 min). Each interval is the
-          reading closest to 15, 30, and 60 minutes after — within ±12 min of that mark — and the
-          arrow is the change from the at-meal value. Intervals with no CGM reading nearby are shown
-          as "—" (e.g. a sensor gap or a meal logged after the last reading).
+          "Before" is the last CGM reading before the meal was logged (within 30 min). Each
+          interval is the reading closest to 15, 30, and 60 minutes after — within ±12 min of that
+          mark — shown with the time it was taken; the arrow is the change from before. "2 h after"
+          is the reading closest to two hours after (±30 min). "—" means no CGM reading nearby
+          (e.g. a sensor gap or a meal logged after the last reading).
         </p>
       </DialogContent>
     </Dialog>

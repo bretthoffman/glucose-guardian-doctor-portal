@@ -27,6 +27,7 @@ import {
   Droplet,
   Gauge,
   CircleDot,
+  Users,
 } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
 import { STATUS_META, glucoseStatus } from "@/lib/glucose-metrics";
@@ -47,6 +48,9 @@ import {
   type MealSlot,
 } from "@/lib/day-review";
 import { DayTimelineChart } from "@/components/DayTimelineChart";
+import { CaregiverName, WhoLogged, useCaregiverLabel } from "@/components/CaregiverName";
+import { caregiverKey } from "@/data/caregivers";
+import { BEFORE_WINDOW_MIN, describeOffset, formatSpan, type EventReading } from "@/lib/meal-glucose";
 
 const RANGES = [
   { id: 3, label: "3H" },
@@ -85,19 +89,41 @@ function startOfMonthDate(key: string): Date {
   return new Date(y, m - 1, 1);
 }
 
-function exportDayCsv(review: DayReview, patientName: string) {
-  const head = ["Time", "Event", "Carbs(g)", "Pre", "Post", "Insulin(u)", "CR", "CF", "Type", "Notes"];
+function exportDayCsv(review: DayReview, patientName: string, who: (name: string) => string) {
+  const head = [
+    "Time",
+    "Event",
+    "Carbs(g)",
+    "Before (mg/dL)",
+    "Before time",
+    "2h after (mg/dL)",
+    "2h after time",
+    "Minutes after",
+    "Insulin(u)",
+    "CR",
+    "CF",
+    "Type",
+    "Meal logged by",
+    "Insulin logged by",
+    "Notes",
+  ];
+  const quote = (v: string) => `"${v.replace(/"/g, "''")}"`;
   const rows = review.events.map((e) => [
     clock(e.timestamp),
     e.label,
     e.carbs ?? "",
-    e.preGlucose ?? "",
-    e.postGlucose ?? "",
+    e.before?.value ?? "",
+    e.before ? clock(e.before.timestamp) : "",
+    e.after?.value ?? "",
+    e.after ? clock(e.after.timestamp) : "",
+    e.after?.offsetMin ?? "",
     e.units ?? "",
     e.kind === "meal" ? ratioText(review.ratios.carbRatio) : "—",
     ratioText(review.ratios.correctionFactor),
     e.doseType ?? "",
-    `"${e.note.replace(/"/g, "''")}"`,
+    e.mealBy ? quote(who(e.mealBy)) : "",
+    e.doseBy ? quote(who(e.doseBy)) : "",
+    quote(e.note),
   ]);
   const csv = [head, ...rows].map((r) => r.join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -178,6 +204,59 @@ function Glucose({ value, zones }: { value: number | null; zones: DayReview["zon
   return <span className={STATUS_META[glucoseStatus(value, zones)].text}>{value}</span>;
 }
 
+/** "7:25 AM · 5 min before" — when a before/after reading was taken, relative to the event. */
+function readingWhen(r: EventReading): string {
+  return `${clock(r.timestamp)} · ${describeOffset(r.offsetMin)}`;
+}
+
+/**
+ * Before-meal and 2-hours-after readings, each with the time it was taken and how far from the
+ * meal — so a doctor never has to guess what "post" means. `showAfter` is off for plain doses.
+ */
+function BeforeAfter({
+  before,
+  after,
+  zones,
+  showAfter = true,
+}: {
+  before: EventReading | null;
+  after: EventReading | null;
+  zones: DayReview["zones"];
+  showAfter?: boolean;
+}) {
+  const delta = before && after ? after.value - before.value : null;
+  return (
+    <div className="grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2 gap-y-0.5 text-xs">
+      <span className="text-muted-foreground">Before</span>
+      <span className="font-medium">
+        <Glucose value={before?.value ?? null} zones={zones} />
+      </span>
+      <span className="text-[11px] text-muted-foreground">
+        {before ? readingWhen(before) : `no reading in the ${BEFORE_WINDOW_MIN} min before`}
+      </span>
+      {showAfter && (
+        <>
+          <span className="text-muted-foreground whitespace-nowrap">2 h after</span>
+          <span className="font-medium whitespace-nowrap">
+            <Glucose value={after?.value ?? null} zones={zones} />
+            {delta != null && (
+              <span
+                className={`ml-1 text-[10px] ${delta > 0 ? "text-warning" : delta < 0 ? "text-success" : "text-muted-foreground"}`}
+              >
+                {delta > 0 ? "+" : delta < 0 ? "−" : "±"}
+                {Math.abs(delta)}
+              </span>
+            )}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            {after ? readingWhen(after) : "no reading near the 2 h mark"}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Meal card ───────────────────────────────────────────────────────────────
 
 function MealCard({
@@ -198,10 +277,11 @@ function MealCard({
       >
         <meta.Icon className={`w-4 h-4 ${meta.color}`} />
       </span>
+      <div className="bg-secondary/30 border border-border rounded-xl hover:border-primary/40 hover:bg-secondary/50 transition-colors">
       <button
         onClick={onDetail}
         title="View meal details, photo, and glucose response"
-        className="w-full text-left bg-secondary/30 border border-border rounded-xl p-3 hover:border-primary/40 hover:bg-secondary/50 transition-colors"
+        className="w-full text-left p-3 pb-2"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -231,17 +311,100 @@ function MealCard({
             <p className="text-[11px] text-muted-foreground mt-1">
               CR {ratioText(review.ratios.carbRatio)} · CF {ratioText(review.ratios.correctionFactor)}
             </p>
-            <p className="text-xs mt-1 flex items-center justify-end gap-1.5">
-              <span className="text-muted-foreground">Pre</span>
-              <Glucose value={meal.preGlucose} zones={review.zones} />
-              <span className="text-muted-foreground">Post</span>
-              <Glucose value={meal.postGlucose} zones={review.zones} />
+            <p className="mt-1 flex justify-end">
               <DirectionIcon d={meal.direction} />
             </p>
           </div>
         </div>
+        <div className="mt-2 pt-2 border-t border-border/50">
+          <BeforeAfter before={meal.before} after={meal.after} zones={review.zones} />
+        </div>
       </button>
+      {/* Outside the card button: the names open the caregiver-title picker. */}
+      <WhoLogged mealBy={meal.mealBy} doseBy={meal.doseBy} className="px-3 pb-2.5" />
+      </div>
     </div>
+  );
+}
+
+// ─── Care Circle (who logged this day) ───────────────────────────────────────
+
+/** Everyone who logged meals or insulin on the selected day, with what they logged. */
+function CareCircleCard({ review }: { review: DayReview }) {
+  const { people, unattributed } = useMemo(() => {
+    const byKey = new Map<string, { name: string; meals: number; doses: number; units: number }>();
+    const person = (name: string) => {
+      const key = caregiverKey(name);
+      let p = byKey.get(key);
+      if (!p) {
+        p = { name, meals: 0, doses: 0, units: 0 };
+        byKey.set(key, p);
+      }
+      return p;
+    };
+    let unattributed = 0;
+    for (const m of review.meals) {
+      if (m.mealBy) person(m.mealBy).meals++;
+      else unattributed++;
+      if (m.units != null) {
+        if (m.doseBy) {
+          const p = person(m.doseBy);
+          p.doses++;
+          p.units += m.units;
+        } else unattributed++;
+      }
+    }
+    for (const e of review.events) {
+      if (e.kind === "meal" || e.units == null) continue;
+      if (!e.doseBy) {
+        unattributed++;
+        continue;
+      }
+      const p = person(e.doseBy);
+      p.doses++;
+      p.units += e.units;
+    }
+    const people = [...byKey.values()].sort((a, b) => b.meals + b.doses - (a.meals + a.doses));
+    return { people, unattributed };
+  }, [review]);
+
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  return (
+    <RailCard title="Care Circle" icon={Users}>
+      {people.length ? (
+        <div className="space-y-2.5">
+          {people.map((p) => (
+            <div key={caregiverKey(p.name)} className="flex items-start justify-between gap-2 text-sm">
+              <CaregiverName name={p.name} />
+              <span className="text-xs text-muted-foreground text-right shrink-0">
+                {[
+                  p.meals ? plural(p.meals, "meal") : null,
+                  p.doses ? `${plural(p.doses, "dose")} · ${Math.round(p.units * 10) / 10}u` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </div>
+          ))}
+          {unattributed > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {unattributed === 1 ? "1 entry" : `${unattributed} entries`} without a name (logged
+              before Care Circle).
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground border-t border-border/60 pt-2">
+            Who logged meals and insulin this day. Click a name to note who they are — only you
+            see titles.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {review.meals.length || review.events.length
+            ? "These entries don’t carry a caregiver name."
+            : "Nothing logged this day."}
+        </p>
+      )}
+    </RailCard>
   );
 }
 
@@ -264,6 +427,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
   });
   const [winEnd, setWinEnd] = useState(() => maxKey(bounds.latest, todayKey, defaultDayKey(data)));
   const [windowHours, setWindowHours] = useState(24);
+  const caregiverLabel = useCaregiverLabel();
   const [notesByDay, setNotesByDay] = useState<Record<string, string[]>>({});
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -486,7 +650,7 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
             </div>
 
             <button
-              onClick={() => exportDayCsv(review, data.profile.childName)}
+              onClick={() => exportDayCsv(review, data.profile.childName, caregiverLabel)}
               className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-foreground hover:bg-secondary transition-colors"
             >
               <Download className="w-4 h-4" /> Export Day
@@ -701,10 +865,11 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                         <th className="px-4 py-2.5 font-medium">Time</th>
                         <th className="px-4 py-2.5 font-medium">Event</th>
                         <th className="px-4 py-2.5 font-medium">Carbs</th>
-                        <th className="px-4 py-2.5 font-medium">Pre / Post</th>
+                        <th className="px-4 py-2.5 font-medium">Before / 2 h after</th>
                         <th className="px-4 py-2.5 font-medium">Insulin</th>
                         <th className="px-4 py-2.5 font-medium">CR | CF</th>
                         <th className="px-4 py-2.5 font-medium">Type</th>
+                        <th className="px-4 py-2.5 font-medium">Logged by</th>
                         <th className="px-4 py-2.5 font-medium">Notes</th>
                       </tr>
                     </thead>
@@ -752,6 +917,8 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
             <KeyVal label="Active Insulin Time" value="—" />
           </div>
         </RailCard>
+
+        <CareCircleCard review={review} />
 
         <RailCard
           title="Clinical Flags"
@@ -874,10 +1041,25 @@ function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
         </span>
       </td>
       <td className="px-4 py-2.5 text-muted-foreground">{e.carbs != null ? e.carbs : "–"}</td>
-      <td className="px-4 py-2.5 whitespace-nowrap">
-        <Glucose value={e.preGlucose} zones={review.zones} />
-        <span className="text-muted-foreground"> / </span>
-        <Glucose value={e.postGlucose} zones={review.zones} />
+      <td className="px-4 py-2.5 whitespace-nowrap text-xs">
+        <div>
+          <Glucose value={e.before?.value ?? null} zones={review.zones} />
+          {e.before && (
+            <span className="text-[11px] text-muted-foreground ml-1.5">
+              {clock(e.before.timestamp)}
+            </span>
+          )}
+        </div>
+        {e.kind !== "insulin" && (
+          <div>
+            <Glucose value={e.after?.value ?? null} zones={review.zones} />
+            {e.after && (
+              <span className="text-[11px] text-muted-foreground ml-1.5">
+                {clock(e.after.timestamp)} ({formatSpan(e.after.offsetMin)} after)
+              </span>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-4 py-2.5 text-foreground">
         {e.units != null ? (
@@ -914,10 +1096,22 @@ function EventRow({ e, review }: { e: DayEvent; review: DayReview }) {
           <span className="text-muted-foreground">–</span>
         )}
       </td>
-      <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">
-        {e.note || "–"}
-        {e.loggedBy && <span className="block text-[11px] opacity-80">logged by {e.loggedBy}</span>}
+      <td className="px-4 py-2.5 text-xs">
+        {e.mealBy || e.doseBy ? (
+          <div className="space-y-0.5">
+            {e.mealBy && <CaregiverName name={e.mealBy} />}
+            {e.doseBy && (!e.mealBy || caregiverKey(e.doseBy) !== caregiverKey(e.mealBy)) && (
+              <div className="flex items-center gap-1">
+                {e.mealBy && <Syringe className="w-3 h-3 text-muted-foreground shrink-0" />}
+                <CaregiverName name={e.doseBy} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">–</span>
+        )}
       </td>
+      <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">{e.note || "–"}</td>
     </tr>
   );
 }

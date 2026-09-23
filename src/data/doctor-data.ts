@@ -24,6 +24,7 @@ import type {
   TherapyOrder,
 } from "./contracts";
 import { USE_MOCK_DATA, mockMessages, mockSendMessage } from "./mock";
+import { caregiverKey, type CaregiverTitle, type CaregiverTitleEntry } from "./caregivers";
 import { normalizeOrgName, searchOrganizations } from "./organizations";
 import type { MockOrganization } from "./mock";
 /**
@@ -225,6 +226,71 @@ function withCareLogs(snapshot: PatientSnapshot, logs: CareLogs | null): Patient
     foodLog: mergeLogEntries(snapshot.foodLog ?? [], logs.food),
     insulinLog: mergeLogEntries(snapshot.insulinLog ?? [], logs.insulin),
   };
+}
+
+// ---- Caregiver titles (doctor's labels for Care Circle members) ----
+
+const caregiverTitlesKey = (accessCode: string) => ["caregiver-titles", accessCode];
+
+/**
+ * This doctor's labels for the people who log for the patient. `titles` is `null` until the
+ * backend routes are deployed (or on error) — callers then show names without a label option.
+ */
+export function useCaregiverTitles(accessCode: string): { titles: CaregiverTitleEntry[] | null } {
+  const query = useQuery({
+    queryKey: caregiverTitlesKey(accessCode),
+    enabled: !!accessCode,
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: async (): Promise<CaregiverTitleEntry[] | null> => {
+      try {
+        const r = await customFetch<{ titles?: CaregiverTitleEntry[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/caregiver-titles`,
+        );
+        return r.titles ?? [];
+      } catch {
+        return null;
+      }
+    },
+  });
+  return { titles: query.data ?? null };
+}
+
+/** Save (or with `title: null`, clear) one caregiver's label; the list updates immediately. */
+export function useSetCaregiverTitle(accessCode: string): {
+  save: (name: string, title: CaregiverTitle | null, detail?: string) => Promise<void>;
+} {
+  const queryClient = useQueryClient();
+  const save = useCallback(
+    async (name: string, title: CaregiverTitle | null, detail?: string) => {
+      const key = caregiverTitlesKey(accessCode);
+      const previous = queryClient.getQueryData<CaregiverTitleEntry[] | null>(key);
+      const others = (previous ?? []).filter((t) => caregiverKey(t.name) !== caregiverKey(name));
+      queryClient.setQueryData<CaregiverTitleEntry[]>(
+        key,
+        title
+          ? [...others, { name: name.trim(), title, detail: detail?.trim() || undefined, updatedAt: Date.now() }]
+          : others,
+      );
+      try {
+        const r = await customFetch<{ titles?: CaregiverTitleEntry[] }>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/caregiver-titles`,
+          { method: "PUT", body: JSON.stringify({ name, title, detail }) },
+        );
+        queryClient.setQueryData(key, r.titles ?? []);
+      } catch (e) {
+        queryClient.setQueryData(key, previous ?? null);
+        if (e instanceof ApiError && (e.status === 404 || e.status === 405 || e.status === 503)) {
+          throw new Error(
+            "Saving caregiver titles needs the pending backend deployment — it will work after the next deploy.",
+          );
+        }
+        throw new Error("Could not save the title. Try again.");
+      }
+    },
+    [accessCode, queryClient],
+  );
+  return { save };
 }
 
 // ---- Doctor alerts (bell feed) ----

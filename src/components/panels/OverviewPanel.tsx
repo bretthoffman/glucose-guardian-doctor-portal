@@ -23,6 +23,7 @@ import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-re
 import { formatDate, formatTime, getGlucoseColor } from "@/lib/utils";
 import { readLabA1c } from "@/data/doctor-data";
 import { MealDetailDialog } from "@/components/MealDetailDialog";
+import { CaregiverName } from "@/components/CaregiverName";
 import {
   computeMetrics,
   detectPatterns,
@@ -423,7 +424,16 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                         {f.foodName}
                         {f.fromPhoto && <Camera className="w-3 h-3 text-muted-foreground shrink-0" />}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">{formatTime(f.timestamp)}</p>
+                      <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
+                        <span className="whitespace-nowrap">{formatTime(f.timestamp)}</span>
+                        {f.authorName && (
+                          <>
+                            <span className="whitespace-nowrap">· by</span>
+                            {/* Inside the row button, so plain text; titles are set elsewhere. */}
+                            <CaregiverName name={f.authorName} interactive={false} />
+                          </>
+                        )}
+                      </p>
                     </div>
                     <span className="text-foreground font-medium shrink-0">{f.estimatedCarbs}g</span>
                   </button>
@@ -452,6 +462,11 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
                     <div className="min-w-0">
                       <span className="font-medium text-primary">{l.units}u</span>
                       <span className="text-muted-foreground ml-2 capitalize">{l.type}</span>
+                      {l.authorName && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          by <CaregiverName name={l.authorName} />
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground">{formatTime(l.timestamp)}</span>
                   </div>

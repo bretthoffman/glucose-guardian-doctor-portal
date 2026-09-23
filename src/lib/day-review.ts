@@ -5,6 +5,7 @@ import type {
   PatientSnapshot,
 } from "@doctor-portal/api-client-react";
 import { glucoseStatus, zonesFromSnapshot, type GlucoseZones } from "./glucose-metrics";
+import { readingAfter, readingBefore, type EventReading } from "./meal-glucose";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,12 @@ export interface DayMeal {
   insulinType: string | null;
   recommendedUnits: number | null;
   manualOverride: boolean;
-  loggedBy: string | null;
+  /** Care Circle member who logged the meal, and who logged the insulin for it. */
+  mealBy: string | null;
+  doseBy: string | null;
+  /** Last reading before the meal and the reading nearest 2 h after — with when each was taken. */
+  before: EventReading | null;
+  after: EventReading | null;
   preGlucose: number | null;
   postGlucose: number | null;
   direction: Direction | null;
@@ -40,6 +46,8 @@ export interface DayEvent {
   label: string;
   slot?: MealSlot;
   carbs: number | null;
+  before: EventReading | null;
+  after: EventReading | null;
   preGlucose: number | null;
   postGlucose: number | null;
   units: number | null;
@@ -47,7 +55,8 @@ export interface DayEvent {
   insulinType: string | null;
   recommendedUnits: number | null;
   manualOverride: boolean;
-  loggedBy: string | null;
+  mealBy: string | null;
+  doseBy: string | null;
   note: string;
   fromPhoto: boolean;
 }
@@ -162,40 +171,6 @@ export const SLOT_LABEL: Record<MealSlot, string> = {
 
 function gmiFromAvg(avg: number): string {
   return (3.31 + 0.02392 * avg).toFixed(1);
-}
-
-/** Nearest reading at/just before `t` (within `windowMin`). */
-function readingBefore(readings: CGMReading[], t: number, windowMin = 60): number | null {
-  let best: CGMReading | null = null;
-  for (const r of readings) {
-    const rt = ms(r.timestamp);
-    if (rt <= t && t - rt <= windowMin * MIN) {
-      if (!best || rt > ms(best.timestamp)) best = r;
-    }
-  }
-  return best?.value ?? null;
-}
-
-/** Reading closest to `t + offsetMin` (within `windowMin` of that target). */
-function readingAfter(
-  readings: CGMReading[],
-  t: number,
-  offsetMin = 120,
-  windowMin = 75,
-): number | null {
-  const target = t + offsetMin * MIN;
-  let best: CGMReading | null = null;
-  let bestGap = Infinity;
-  for (const r of readings) {
-    const rt = ms(r.timestamp);
-    if (rt <= t) continue;
-    const gap = Math.abs(rt - target);
-    if (gap <= windowMin * MIN && gap < bestGap) {
-      best = r;
-      bestGap = gap;
-    }
-  }
-  return best?.value ?? null;
 }
 
 function directionOf(pre: number | null, post: number | null): Direction | null {
@@ -334,7 +309,8 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayStartMs + 24 * 60 * MIN;
 
-  const readings = [...(s.glucoseReadings ?? [])]
+  const allReadings = s.glucoseReadings ?? [];
+  const readings = [...allReadings]
     .filter((r) => dayKeyOf(r.timestamp) === key)
     .sort((a, b) => ms(a.timestamp) - ms(b.timestamp));
   const foods = [...(s.foodLog ?? [])]
@@ -366,8 +342,11 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     const dose = insulinForFood(food);
     if (dose) usedInsulinIds.add(dose.id);
     const t = ms(food.timestamp);
-    const pre = readingBefore(readings, t);
-    const post = readingAfter(readings, t);
+    // Look across the whole history so a late dinner still gets its after-midnight 2 h reading.
+    const before = readingBefore(allReadings, t);
+    const after = readingAfter(allReadings, t);
+    const pre = before?.value ?? null;
+    const post = after?.value ?? null;
     return {
       id: food.id,
       slot: slotForHour(new Date(food.timestamp).getHours()),
@@ -383,7 +362,10 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
       insulinType: dose?.insulinType ?? null,
       recommendedUnits: dose?.recommendedUnits ?? null,
       manualOverride: dose?.manualOverride ?? false,
-      loggedBy: food.authorName ?? dose?.authorName ?? null,
+      mealBy: food.authorName ?? null,
+      doseBy: dose?.authorName ?? null,
+      before,
+      after,
       preGlucose: pre,
       postGlucose: post,
       direction: directionOf(pre, post),
@@ -398,6 +380,8 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     label: SLOT_LABEL[m.slot],
     slot: m.slot,
     carbs: m.carbs,
+    before: m.before,
+    after: m.after,
     preGlucose: m.preGlucose,
     postGlucose: m.postGlucose,
     units: m.units,
@@ -405,7 +389,8 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     insulinType: m.insulinType,
     recommendedUnits: m.recommendedUnits,
     manualOverride: m.manualOverride,
-    loggedBy: m.loggedBy,
+    mealBy: m.mealBy,
+    doseBy: m.doseBy,
     note: m.name,
     fromPhoto: m.fromPhoto,
   }));
@@ -413,6 +398,8 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
     if (usedInsulinIds.has(l.id)) continue;
     const t = ms(l.timestamp);
     const isCorr = l.type === "correction";
+    const before = readingBefore(allReadings, t);
+    const after = isCorr ? readingAfter(allReadings, t) : null;
     const label =
       l.type === "correction"
         ? "Correction"
@@ -427,14 +414,17 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
       kind: isCorr ? "correction" : "insulin",
       label,
       carbs: null,
-      preGlucose: readingBefore(readings, t),
-      postGlucose: isCorr ? readingAfter(readings, t) : null,
+      before,
+      after,
+      preGlucose: before?.value ?? null,
+      postGlucose: after?.value ?? null,
       units: l.units,
       doseType: l.type,
       insulinType: l.insulinType ?? null,
       recommendedUnits: l.recommendedUnits ?? null,
       manualOverride: l.manualOverride ?? false,
-      loggedBy: l.authorName ?? null,
+      mealBy: null,
+      doseBy: l.authorName ?? null,
       note: l.note ?? "",
       fromPhoto: false,
     });
