@@ -6,7 +6,7 @@ import {
   ArrowDown,
   ArrowUpRight,
   ArrowDownRight,
-  Bell,
+  Calculator,
   Clock,
   SlidersHorizontal,
   Settings2,
@@ -22,7 +22,9 @@ import {
 import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { formatDate, formatTime, getGlucoseColor } from "@/lib/utils";
 import { readLabA1c } from "@/data/doctor-data";
+import type { PatientDetail } from "@/data/contracts";
 import { MealDetailDialog } from "@/components/MealDetailDialog";
+import { DoseCalculationCard } from "@/components/DoseCalculationCard";
 import { CaregiverName } from "@/components/CaregiverName";
 import {
   computeMetrics,
@@ -52,7 +54,7 @@ const WIDGETS: WidgetDef[] = [
   { id: "insulinToday", label: "Insulin Today", group: "kpi" },
   { id: "tar", label: "Time Above Range", group: "kpi" },
   { id: "cgm", label: "CGM Chart", group: "chart" },
-  { id: "alerts", label: "Alert Thresholds", group: "module" },
+  { id: "dose", label: "Dose Calculation", group: "module" },
   { id: "ratios", label: "Ratios & Factors", group: "module" },
   { id: "patterns", label: "Detected Patterns", group: "module" },
   { id: "readings", label: "Recent Readings", group: "module" },
@@ -171,7 +173,16 @@ function QuickStat({ label, value, accent }: { label: string; value: string; acc
   );
 }
 
-export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; accessCode: string }) {
+export function OverviewPanel({
+  data,
+  accessCode,
+  detail,
+}: {
+  data: PatientSnapshot;
+  accessCode: string;
+  /** Proposal state for the dose card's "Suggest a change". */
+  detail?: PatientDetail;
+}) {
   const [, setLocation] = useLocation();
   const [visible, setVisible] = useState<Record<string, boolean>>(loadVisible);
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -345,16 +356,10 @@ export function OverviewPanel({ data, accessCode }: { data: PatientSnapshot; acc
             </div>
           </div>
         );
-      case "alerts":
+      case "dose":
         return (
-          <SectionCard title="Alert Thresholds" icon={Bell} action={editLink}>
-            <div className="space-y-2.5">
-              <ThresholdRow label="Urgent High" value={`> ${z.urgentHigh}`} tone="text-destructive" />
-              <ThresholdRow label="High" value={`${z.high}–${z.urgentHigh}`} tone="text-warning" />
-              <ThresholdRow label="Target Range" value={`${z.low}–${z.high}`} tone="text-success" />
-              <ThresholdRow label="Low" value={`< ${z.low}`} tone="text-orange-500" />
-              <ThresholdRow label="Urgent Low" value={`< ${z.urgentLow}`} tone="text-destructive" />
-            </div>
+          <SectionCard title="Dose Calculation" icon={Calculator} action={editLink}>
+            <DoseCalculationCard snapshot={data} detail={detail} />
           </SectionCard>
         );
       case "ratios":
@@ -612,18 +617,6 @@ function Legend({ hex, label }: { hex: string; label: string }) {
       <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: hex }} />
       {label}
     </span>
-  );
-}
-
-function ThresholdRow({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="flex items-center gap-2 text-muted-foreground">
-        <span className={`w-1.5 h-1.5 rounded-full ${tone.replace("text-", "bg-")}`} />
-        {label}
-      </span>
-      <span className={`font-medium ${tone}`}>{value}</span>
-    </div>
   );
 }
 

@@ -384,7 +384,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
           />
           <div key={current} className="animate-fade-in">
             {current === "overview" && (
-              <OverviewPanel data={detail.snapshot} accessCode={detail.accessCode} />
+              <OverviewPanel data={detail.snapshot} accessCode={detail.accessCode} detail={detail} />
             )}
             {current === "chart" && (
               <ChartPanel
