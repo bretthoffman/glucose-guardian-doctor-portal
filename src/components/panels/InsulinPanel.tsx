@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import {
   ChevronLeft,
@@ -273,6 +273,22 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
   const stripRef = useRef<HTMLDivElement>(null);
   const dateRef = useRef<HTMLDivElement>(null);
   const drag = useRef({ active: false, startX: 0, startScroll: 0, moved: false });
+
+  // Older history streams in after the first render — widen the strip back to the earliest day,
+  // holding the visible chips in place (measured from the right) so the strip doesn't jump to the
+  // oldest day and sweep back.
+  const keepFromRight = useRef<number | null>(null);
+  useEffect(() => {
+    if (bounds.earliest >= winStart) return;
+    const el = stripRef.current;
+    keepFromRight.current = el ? el.scrollWidth - el.scrollLeft : null;
+    setWinStart(bounds.earliest);
+  }, [bounds.earliest, winStart]);
+  useLayoutEffect(() => {
+    const el = stripRef.current;
+    if (el && keepFromRight.current != null) el.scrollLeft = el.scrollWidth - keepFromRight.current;
+    keepFromRight.current = null;
+  }, [winStart]);
 
   const chips = useMemo(() => buildDayChips(data, winStart, winEnd), [data, winStart, winEnd]);
   const review = useMemo(() => buildDayReview(data, selectedKey), [data, selectedKey]);

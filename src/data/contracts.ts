@@ -78,6 +78,10 @@ export interface PatientDetail {
   };
   /** Chronological log of treatment-setting changes (oldest→newest), for trend comparison. */
   settingsHistory?: SettingsChange[];
+  /** True when meals/insulin come from the server-side log (current) rather than the phone's sync. */
+  logsFromServer?: boolean;
+  /** "server" when the phone has never synced and the chart is built from server records. */
+  source?: "phone" | "server";
 }
 
 export interface SettingsChange {

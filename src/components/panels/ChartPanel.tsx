@@ -199,9 +199,24 @@ function TrendCard({
   );
 }
 
-export function ChartPanel({ data }: { data: PatientSnapshot }) {
+export function ChartPanel({
+  data,
+  historyLoading = false,
+  onNeedHistoryDays,
+}: {
+  data: PatientSnapshot;
+  /** True while the durable CGM history is still arriving. */
+  historyLoading?: boolean;
+  /** Ask the page to load at least this many days of history. */
+  onNeedHistoryDays?: (days: number) => void;
+}) {
   const [, setLocation] = useLocation();
   const [rangeDays, setRangeDays] = useState(30);
+  const pickRange = (d: number) => {
+    setRangeDays(d);
+    // The "vs prior period" deltas compare against the window before this one, so load twice.
+    onNeedHistoryDays?.(d * 2);
+  };
   const zones = useMemo(() => zonesFromSnapshot(data), [data]);
   const readings = useMemo(
     () =>
@@ -402,7 +417,7 @@ export function ChartPanel({ data }: { data: PatientSnapshot }) {
           {RANGES.map((d) => (
             <button
               key={d}
-              onClick={() => setRangeDays(d)}
+              onClick={() => pickRange(d)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 rangeDays === d
                   ? "bg-primary text-primary-foreground"
@@ -428,10 +443,15 @@ export function ChartPanel({ data }: { data: PatientSnapshot }) {
               Glucose Over Time
               <Info className="w-4 h-4 text-muted-foreground" />
             </h3>
-            {dataSpanDays < rangeDays && readings.length > 0 && (
-              <p className="text-xs text-muted-foreground mb-2">
-                Showing all available data ({spanDays} day{spanDays === 1 ? "" : "s"}).
-              </p>
+            {historyLoading ? (
+              <p className="text-xs text-muted-foreground mb-2">Loading full history…</p>
+            ) : (
+              dataSpanDays < rangeDays &&
+              readings.length > 0 && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Showing all available data ({spanDays} day{spanDays === 1 ? "" : "s"}).
+                </p>
+              )
             )}
             <GlucoseTrendChart readings={readings} zones={zones} domain={domain} height={380} />
             <div className="flex items-center gap-6 mt-3 text-xs text-muted-foreground">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
   ApiError,
   customFetch,
@@ -13,6 +13,8 @@ import type {
   DoctorLinkedPatient,
   DoctorLinkPatientResponse,
   DoctorMessage,
+  FoodLogEntry,
+  InsulinLogEntry,
   PatientSnapshot,
 } from "@doctor-portal/api-client-react";
 import type {
@@ -69,20 +71,160 @@ export function useGlucoseHistory(
     enabled: !!accessCode && fromMs > 0 && fromMs < toMs,
     staleTime: 5 * 60_000,
     retry: false,
-    queryFn: async (): Promise<CGMReading[] | null> => {
+    queryFn: () => fetchGlucoseWindow(accessCode, fromMs, toMs),
+  });
+  return { readings: query.data ?? null, isLoading: query.isLoading };
+}
+
+/** Durable readings for one window; `null` when the endpoint isn't deployed / is unavailable. */
+async function fetchGlucoseWindow(
+  accessCode: string,
+  fromMs: number,
+  toMs: number,
+): Promise<CGMReading[] | null> {
+  try {
+    const from = encodeURIComponent(new Date(fromMs).toISOString());
+    const to = encodeURIComponent(new Date(toMs).toISOString());
+    const r = await customFetch<{ readings?: CGMReading[] }>(
+      `/api/doctor/patient/${encodeURIComponent(accessCode)}/readings?from=${from}&to=${to}`,
+    );
+    return r.readings ?? [];
+  } catch {
+    return null;
+  }
+}
+
+// ---- Full history (the phone's sync only carries the latest slice) ----
+
+const DAY_MS = 86_400_000;
+
+/** Days of CGM history the patient page loads up front; the Charts view can ask for more. */
+export const DEFAULT_HISTORY_DAYS = 90;
+
+/** Endpoint window per request — ~4k readings at 5-min cadence; the server pages beyond that. */
+const HISTORY_CHUNK_DAYS = 14;
+
+/** Merge two reading lists, one reading per minute (phone and server carry the same samples). */
+function mergeReadings(a: CGMReading[], b: CGMReading[]): CGMReading[] {
+  const byMinute = new Map<number, { r: CGMReading; t: number }>();
+  for (const r of [...a, ...b]) {
+    const t = new Date(r.timestamp).getTime();
+    const key = Math.floor(t / 60_000);
+    if (!byMinute.has(key)) byMinute.set(key, { r, t });
+  }
+  return [...byMinute.values()].sort((x, y) => x.t - y.t).map((x) => x.r);
+}
+
+function combineHistory(results: UseQueryResult<CGMReading[] | null>[]): {
+  readings: CGMReading[] | null;
+  isLoading: boolean;
+} {
+  const loaded = results.map((r) => r.data).filter((d): d is CGMReading[] => Array.isArray(d));
+  return {
+    // null until at least one window arrives (or when the endpoint isn't deployed at all).
+    readings: loaded.length ? mergeReadings([], loaded.flat()) : null,
+    isLoading: results.some((r) => r.isLoading),
+  };
+}
+
+/**
+ * The patient's CGM history for the last `days` from the durable server store — the snapshot only
+ * carries ~1 day. Fetched as fixed windows anchored on UTC midnight so each window's cache key is
+ * stable: past windows never change, and only the one covering today refreshes (every 5 minutes;
+ * the snapshot's 30-second poll keeps the newest readings current in between).
+ */
+export function usePatientGlucoseHistory(
+  accessCode: string,
+  days: number,
+): { readings: CGMReading[] | null; isLoading: boolean } {
+  const endMs = (Math.floor(Date.now() / DAY_MS) + 1) * DAY_MS;
+  const startMs = endMs - days * DAY_MS;
+  const windows: { fromMs: number; toMs: number }[] = [];
+  for (let toMs = endMs; toMs > startMs; toMs -= HISTORY_CHUNK_DAYS * DAY_MS) {
+    windows.push({ fromMs: Math.max(startMs, toMs - HISTORY_CHUNK_DAYS * DAY_MS), toMs });
+  }
+  return useQueries({
+    queries: windows.map((w) => ({
+      queryKey: ["glucose-history", accessCode, w.fromMs, w.toMs],
+      enabled: !!accessCode,
+      staleTime: w.toMs === endMs ? 5 * 60_000 : Infinity,
+      refetchInterval: w.toMs === endMs ? 5 * 60_000 : (false as const),
+      retry: false,
+      queryFn: () => fetchGlucoseWindow(accessCode, w.fromMs, w.toMs),
+    })),
+    combine: combineHistory,
+  });
+}
+
+/** The snapshot with the durable CGM history merged in — for the multi-day views only. */
+export function withGlucoseHistory(
+  snapshot: PatientSnapshot,
+  history: CGMReading[] | null,
+): PatientSnapshot {
+  if (!history?.length) return snapshot;
+  return { ...snapshot, glucoseReadings: mergeReadings(history, snapshot.glucoseReadings ?? []) };
+}
+
+interface CareLogs {
+  food: FoodLogEntry[];
+  insulin: InsulinLogEntry[];
+}
+
+/** How far back the logged food + insulin history reaches. */
+const LOG_HISTORY_DAYS = 365;
+
+/**
+ * Every food + insulin entry logged for the patient in the last year, from the server-side log
+ * (the phone's sync only carries its newest 100 of each). `null` until that endpoint is deployed;
+ * refreshed every minute so entries logged on any circle member's device show up.
+ */
+function usePatientCareLogs(accessCode: string): CareLogs | null {
+  const endMs = (Math.floor(Date.now() / DAY_MS) + 1) * DAY_MS;
+  const fromMs = endMs - LOG_HISTORY_DAYS * DAY_MS;
+  const query = useQuery({
+    queryKey: ["care-logs", accessCode, fromMs, endMs],
+    enabled: !!accessCode,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+    queryFn: async (): Promise<CareLogs | null> => {
       try {
         const from = encodeURIComponent(new Date(fromMs).toISOString());
-        const to = encodeURIComponent(new Date(toMs).toISOString());
-        const r = await customFetch<{ readings?: CGMReading[] }>(
-          `/api/doctor/patient/${encodeURIComponent(accessCode)}/readings?from=${from}&to=${to}`,
+        const to = encodeURIComponent(new Date(endMs).toISOString());
+        const r = await customFetch<Partial<CareLogs>>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/logs?from=${from}&to=${to}`,
         );
-        return r.readings ?? [];
+        return { food: r.food ?? [], insulin: r.insulin ?? [] };
       } catch {
-        return null; // endpoint not deployed / unavailable → snapshot fallback
+        return null; // not deployed yet / unavailable → the snapshot's logs still render
       }
     },
   });
-  return { readings: query.data ?? null, isLoading: query.isLoading };
+  return query.data ?? null;
+}
+
+/**
+ * Union by entry id, newest first (the order the app syncs in). The server copy wins where both
+ * exist — it carries later edits — while fields only the phone sends (meal photo thumbnails) and
+ * entries the server hasn't received yet are kept.
+ */
+function mergeLogEntries<T extends { id: string; timestamp: string }>(phone: T[], server: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const e of phone) byId.set(e.id, e);
+  for (const e of server) byId.set(e.id, { ...byId.get(e.id), ...e });
+  return [...byId.values()]
+    .map((e) => ({ e, t: new Date(e.timestamp).getTime() }))
+    .sort((a, b) => b.t - a.t)
+    .map((x) => x.e);
+}
+
+function withCareLogs(snapshot: PatientSnapshot, logs: CareLogs | null): PatientSnapshot {
+  if (!logs) return snapshot;
+  return {
+    ...snapshot,
+    foodLog: mergeLogEntries(snapshot.foodLog ?? [], logs.food),
+    insulinLog: mergeLogEntries(snapshot.insulinLog ?? [], logs.insulin),
+  };
 }
 
 // ---- Doctor alerts (bell feed) ----
@@ -305,10 +447,16 @@ export function usePatientDetail(
   accessCode: string,
 ): QueryResult<PatientDetail> & { isFetching: boolean; refetch: () => void } {
   const { snapshot, isLoading, isFetching, error, refetch } = usePatientSnapshot(accessCode);
-  const data = useMemo(
-    () => (snapshot ? snapshotToDetail(accessCode, snapshot) : undefined),
-    [accessCode, snapshot],
-  );
+  const logs = usePatientCareLogs(accessCode);
+  const data = useMemo(() => {
+    if (!snapshot) return undefined;
+    const source = (snapshot as PatientSnapshot & { source?: "phone" | "server" }).source;
+    return {
+      ...snapshotToDetail(accessCode, withCareLogs(snapshot, logs)),
+      logsFromServer: !!logs,
+      source,
+    };
+  }, [accessCode, snapshot, logs]);
   return { data, isLoading, error, isFetching, refetch };
 }
 

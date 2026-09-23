@@ -38,7 +38,12 @@ import { AssistantWidget } from "@/components/AssistantWidget";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useSession } from "@/auth/use-session";
 import { useCurrentDoctor } from "@/auth/use-current-doctor";
-import { usePatientDetail } from "@/data/doctor-data";
+import {
+  DEFAULT_HISTORY_DAYS,
+  usePatientDetail,
+  usePatientGlucoseHistory,
+  withGlucoseHistory,
+} from "@/data/doctor-data";
 import { isDecisionUnseen, markDecisionSeen } from "@/data/notifications";
 
 // `inNav: false` tabs are still valid routes (reached from Overview cards) but hidden from the
@@ -156,6 +161,18 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
   const access = useCurrentDoctor();
   const doctor = access.status === "active" ? access.doctor : undefined;
   const { data: detail, isLoading, isFetching, refetch } = usePatientDetail(accessCode);
+  // The multi-day views (Charts, Daily Review) get the full CGM history; everything else keeps
+  // the live snapshot so its "24h" figures stay 24 hours.
+  const [historyDays, setHistoryDays] = useState(DEFAULT_HISTORY_DAYS);
+  const history = usePatientGlucoseHistory(accessCode, historyDays);
+  const historySnapshot = useMemo(
+    () => (detail ? withGlucoseHistory(detail.snapshot, history.readings) : undefined),
+    [detail, history.readings],
+  );
+  const needHistoryDays = useCallback(
+    (days: number) => setHistoryDays((cur) => Math.max(cur, days)),
+    [],
+  );
   const navigateTab = useCallback(
     (t: string) => setLocation(`/patient/${accessCode}/${t}`),
     [setLocation, accessCode],
@@ -352,14 +369,26 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
               <ArrowLeft className="w-4 h-4" /> Back to Overview
             </button>
           )}
-          <PatientHeader snapshot={detail.snapshot} onRefresh={refetch} refreshing={isFetching} />
+          <PatientHeader
+            snapshot={detail.snapshot}
+            onRefresh={refetch}
+            refreshing={isFetching}
+            logsFromServer={detail.logsFromServer}
+            source={detail.source}
+          />
           <div key={current} className="animate-fade-in">
             {current === "overview" && (
               <OverviewPanel data={detail.snapshot} accessCode={detail.accessCode} />
             )}
-            {current === "chart" && <ChartPanel data={detail.snapshot} />}
+            {current === "chart" && (
+              <ChartPanel
+                data={historySnapshot ?? detail.snapshot}
+                historyLoading={history.isLoading}
+                onNeedHistoryDays={needHistoryDays}
+              />
+            )}
             {current === "insulin" && (
-              <InsulinPanel data={detail.snapshot} accessCode={detail.accessCode} />
+              <InsulinPanel data={historySnapshot ?? detail.snapshot} accessCode={detail.accessCode} />
             )}
             {current === "orders" && <TherapyOrdersPanel detail={detail} />}
             {current === "messages" && (

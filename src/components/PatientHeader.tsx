@@ -72,10 +72,16 @@ export function PatientHeader({
   snapshot,
   onRefresh,
   refreshing,
+  logsFromServer = false,
+  source,
 }: {
   snapshot: PatientSnapshot;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** Meals/insulin come from the server-side log, so they're current even when the phone is idle. */
+  logsFromServer?: boolean;
+  /** "server" when the phone has never synced and this chart is built from server records. */
+  source?: "phone" | "server";
 }) {
   const p = snapshot.profile;
   const age = ageLabel(p.dateOfBirth);
@@ -180,9 +186,16 @@ export function PatientHeader({
           />
         </div>
 
-        {/* Meals & insulin only reach the portal when the app syncs; make staleness explicit so an
-            old entry is never mistaken for current activity. */}
-        {syncMins != null && syncMins > 180 && (
+        {source === "server" && (
+          <p className="w-full text-xs text-muted-foreground flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            The patient's app hasn't synced with the portal yet, so this chart is built from their
+            server records. Messages and treatment changes reach them once the app syncs.
+          </p>
+        )}
+        {/* Without the server-side log, meals & insulin only reach the portal when the app syncs;
+            make staleness explicit so an old entry is never mistaken for current activity. */}
+        {source !== "server" && !logsFromServer && syncMins != null && syncMins > 180 && (
           <p className="w-full text-xs text-amber-600/90 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 shrink-0" />
             Meals &amp; insulin last synced from the app {formatAge(syncMins)} — newer entries in the

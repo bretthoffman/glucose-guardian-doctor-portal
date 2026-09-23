@@ -12,6 +12,31 @@ import {
 import type { CGMReading } from "@doctor-portal/api-client-react";
 import { glucoseStatus, STATUS_META, type GlucoseZones } from "@/lib/glucose-metrics";
 
+/** Most points the chart draws; longer ranges keep each bucket's lowest and highest reading. */
+const MAX_POINTS = 1500;
+
+/** Thin a long series without hiding lows or spikes: per bucket, keep its min and max in time order. */
+function decimate<T extends { ts: number; value: number }>(points: T[], max: number): T[] {
+  if (points.length <= max) return points;
+  const buckets = Math.floor(max / 2);
+  const size = points.length / buckets;
+  const out: T[] = [];
+  for (let b = 0; b < buckets; b++) {
+    const start = Math.floor(b * size);
+    const end = Math.min(points.length, Math.floor((b + 1) * size));
+    let lo = points[start];
+    let hi = points[start];
+    for (let i = start + 1; i < end; i++) {
+      if (points[i].value < lo.value) lo = points[i];
+      if (points[i].value > hi.value) hi = points[i];
+    }
+    if (lo === hi) out.push(lo);
+    else if (lo.ts < hi.ts) out.push(lo, hi);
+    else out.push(hi, lo);
+  }
+  return out;
+}
+
 function formatDateTick(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
@@ -64,15 +89,19 @@ export function GlucoseTrendChart({
     .filter((d) => d.ts >= domain[0] && d.ts <= domain[1])
     .sort((a, b) => a.ts - b.ts);
 
-  // Smoothed average-glucose trend line (centered moving average).
+  // Smoothed average-glucose trend line (centered moving average over the full-resolution
+  // series; prefix sums keep months of 5-minute readings cheap).
   const win = Math.max(2, Math.floor(base.length / 24));
-  const data = base.map((d, i) => {
-    const lo = Math.max(0, i - win);
-    const hi = Math.min(base.length - 1, i + win);
-    let sum = 0;
-    for (let j = lo; j <= hi; j++) sum += base[j].value;
-    return { ...d, avg: Math.round(sum / (hi - lo + 1)) };
-  });
+  const prefix = new Float64Array(base.length + 1);
+  for (let i = 0; i < base.length; i++) prefix[i + 1] = prefix[i] + base[i].value;
+  const data = decimate(
+    base.map((d, i) => {
+      const lo = Math.max(0, i - win);
+      const hi = Math.min(base.length - 1, i + win);
+      return { ...d, avg: Math.round((prefix[hi + 1] - prefix[lo]) / (hi - lo + 1)) };
+    }),
+    MAX_POINTS,
+  );
 
   const peak = Math.max(400, ...data.map((d) => d.value));
   const yMax = Math.ceil((peak + 10) / 50) * 50;

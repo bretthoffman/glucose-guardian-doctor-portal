@@ -207,31 +207,61 @@ function directionOf(pre: number | null, post: number | null): Direction | null 
 }
 
 // ─── Calendar strip ──────────────────────────────────────────────────────────
+// These run over the full history (months of 5-minute readings), so each is a single pass —
+// no spreading large arrays into Math.max, no per-day rescans.
 
-/** The latest local day for which the snapshot holds any data (readings/meals/insulin). */
-function latestDataDay(s: PatientSnapshot): Date {
-  const stamps: number[] = [];
-  const push = (arr?: { timestamp: string }[]) => arr?.forEach((x) => stamps.push(ms(x.timestamp)));
-  push(s.glucoseReadings);
-  push(s.insulinLog);
-  push(s.foodLog);
-  if (!stamps.length) return new Date();
-  return new Date(Math.max(...stamps));
+/** Latest timestamp (ms) across the given lists, or null when they are all empty. */
+function latestMs(...lists: ({ timestamp: string }[] | undefined)[]): number | null {
+  let max: number | null = null;
+  for (const list of lists) {
+    for (const x of list ?? []) {
+      const t = ms(x.timestamp);
+      if (max == null || t > max) max = t;
+    }
+  }
+  return max;
 }
 
 export function defaultDayKey(s: PatientSnapshot): string {
   // Prefer the most recent day that has meals or insulin (the richest review), else latest data.
-  const eventStamps = [...(s.foodLog ?? []), ...(s.insulinLog ?? [])].map((x) => ms(x.timestamp));
-  if (eventStamps.length) return dayKeyOf(new Date(Math.max(...eventStamps)).toISOString());
-  return localDayKey(latestDataDay(s));
+  const lastEvent = latestMs(s.foodLog, s.insulinLog);
+  if (lastEvent != null) return localDayKey(new Date(lastEvent));
+  return localDayKey(new Date(latestMs(s.glucoseReadings) ?? Date.now()));
 }
 
-function chipFor(s: PatientSnapshot, key: string, zones: GlucoseZones, todayKey: string): DayChip {
+interface DayCounts {
+  meals: number;
+  insulin: number;
+  readings: number;
+  hasHigh: boolean;
+}
+
+/** Per-day meal/insulin/reading counts in one pass over the snapshot. */
+function indexDays(s: PatientSnapshot, zones: GlucoseZones): Map<string, DayCounts> {
+  const days = new Map<string, DayCounts>();
+  const at = (timestamp: string) => {
+    const key = dayKeyOf(timestamp);
+    let d = days.get(key);
+    if (!d) {
+      d = { meals: 0, insulin: 0, readings: 0, hasHigh: false };
+      days.set(key, d);
+    }
+    return d;
+  };
+  for (const f of s.foodLog ?? []) at(f.timestamp).meals++;
+  for (const l of s.insulinLog ?? []) at(l.timestamp).insulin++;
+  for (const r of s.glucoseReadings ?? []) {
+    const d = at(r.timestamp);
+    d.readings++;
+    if (r.value >= zones.urgentHigh) d.hasHigh = true;
+  }
+  return days;
+}
+
+function chipFor(counts: DayCounts | undefined, key: string, todayKey: string): DayChip {
   const date = startOfDay(key);
-  const meals = (s.foodLog ?? []).filter((f) => dayKeyOf(f.timestamp) === key).length;
-  const insulin = (s.insulinLog ?? []).filter((l) => dayKeyOf(l.timestamp) === key).length;
-  const dayReadings = (s.glucoseReadings ?? []).filter((r) => dayKeyOf(r.timestamp) === key);
-  const hasHigh = dayReadings.some((r) => r.value >= zones.urgentHigh);
+  const meals = counts?.meals ?? 0;
+  const insulin = counts?.insulin ?? 0;
   return {
     key,
     date,
@@ -239,8 +269,8 @@ function chipFor(s: PatientSnapshot, key: string, zones: GlucoseZones, todayKey:
     label: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
     meals,
     insulin,
-    hasHigh,
-    hasData: meals > 0 || insulin > 0 || dayReadings.length > 0,
+    hasHigh: counts?.hasHigh ?? false,
+    hasData: meals > 0 || insulin > 0 || (counts?.readings ?? 0) > 0,
     hasNotes: false,
     isToday: key === todayKey,
   };
@@ -255,19 +285,20 @@ export function shiftDayKey(key: string, delta: number): string {
 
 /** Earliest and latest local day keys present in the snapshot. */
 export function dayKeyBounds(s: PatientSnapshot): { earliest: string; latest: string } {
-  const stamps: number[] = [];
-  const push = (arr?: { timestamp: string }[]) => arr?.forEach((x) => stamps.push(ms(x.timestamp)));
-  push(s.glucoseReadings);
-  push(s.insulinLog);
-  push(s.foodLog);
-  if (!stamps.length) {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const list of [s.glucoseReadings, s.insulinLog, s.foodLog]) {
+    for (const x of list ?? []) {
+      const t = ms(x.timestamp);
+      if (min == null || t < min) min = t;
+      if (max == null || t > max) max = t;
+    }
+  }
+  if (min == null || max == null) {
     const t = localDayKey(new Date());
     return { earliest: t, latest: t };
   }
-  return {
-    earliest: localDayKey(new Date(Math.min(...stamps))),
-    latest: localDayKey(new Date(Math.max(...stamps))),
-  };
+  return { earliest: localDayKey(new Date(min)), latest: localDayKey(new Date(max)) };
 }
 
 /** Set of day keys that have any data — used to dot days in the date picker. */
@@ -282,13 +313,13 @@ export function dataDayKeySet(s: PatientSnapshot): Set<string> {
 
 /** Calendar chips for every day in [startKey, endKey] (inclusive). */
 export function buildDayChips(s: PatientSnapshot, startKey: string, endKey: string): DayChip[] {
-  const zones = zonesFromSnapshot(s);
+  const days = indexDays(s, zonesFromSnapshot(s));
   const todayKey = localDayKey(new Date());
   const chips: DayChip[] = [];
   let key = startKey;
   let guard = 0;
   while (key <= endKey && guard < 366) {
-    chips.push(chipFor(s, key, zones, todayKey));
+    chips.push(chipFor(days.get(key), key, todayKey));
     key = shiftDayKey(key, 1);
     guard++;
   }
