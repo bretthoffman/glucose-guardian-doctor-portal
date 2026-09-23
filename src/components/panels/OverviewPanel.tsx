@@ -25,6 +25,7 @@ import { readLabA1c } from "@/data/doctor-data";
 import type { PatientDetail } from "@/data/contracts";
 import { MealDetailModal } from "@/components/MealResponsePanel";
 import { buildDayReview, localDayKey } from "@/lib/day-review";
+import { mealHasViewablePhoto } from "@/lib/meal-photo";
 import { DoseCalculationCard } from "@/components/DoseCalculationCard";
 import { CaregiverName } from "@/components/CaregiverName";
 import {
@@ -434,7 +435,13 @@ export function OverviewPanel({
                     <div className="min-w-0">
                       <p className="text-foreground truncate flex items-center gap-1.5">
                         {f.foodName}
-                        {f.fromPhoto && <Camera className="w-3 h-3 text-muted-foreground shrink-0" />}
+                        {mealHasViewablePhoto(f) ? (
+                          <span title="Has a photo — open to view" className="inline-flex shrink-0">
+                            <Camera className="w-3 h-3 text-primary" />
+                          </span>
+                        ) : (
+                          f.fromPhoto && <Camera className="w-3 h-3 text-muted-foreground shrink-0" />
+                        )}
                       </p>
                       <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
                         <span className="whitespace-nowrap">{formatTime(f.timestamp)}</span>

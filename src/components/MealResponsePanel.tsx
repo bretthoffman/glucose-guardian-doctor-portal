@@ -3,7 +3,8 @@ import { ArrowDown, ArrowRight, ArrowUp, Camera, Minus, Utensils } from "lucide-
 import type { FoodLogEntry, PatientSnapshot } from "@doctor-portal/api-client-react";
 import { SLOT_LABEL, type DayMeal, type DayReview } from "@/lib/day-review";
 import { glucoseStatus, STATUS_META } from "@/lib/glucose-metrics";
-import { useGlucoseHistory } from "@/data/doctor-data";
+import { useGlucoseHistory, useMealPhoto } from "@/data/doctor-data";
+import { syncedPhotoThumb } from "@/lib/meal-photo";
 import { DayTimelineChart } from "@/components/DayTimelineChart";
 import { formatTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -154,7 +155,9 @@ function MealDetailBody({
     () => (review.markers ?? []).filter((m) => m.ts >= domain[0] && m.ts <= domain[1]),
     [review.markers, domain[0], domain[1]],
   );
-  const photo = food?.photoDataUri?.startsWith("data:image/") ? food.photoDataUri : null;
+  // The full-size upload when the app sent one; the synced thumbnail meanwhile (or instead).
+  const uploaded = useMealPhoto(snapshot.accessCode, food);
+  const photo = uploaded.url ?? syncedPhotoThumb(food);
 
   const when = new Date(meal.timestamp).toLocaleDateString(undefined, {
     weekday: "short",
@@ -193,6 +196,18 @@ function MealDetailBody({
           alt={meal.name}
           className="w-full max-h-80 object-contain rounded-xl border border-border bg-black/20 mb-3"
         />
+      ) : uploaded.loading ? (
+        <div
+          role="status"
+          className="mb-3 h-56 rounded-xl border border-border bg-secondary/40 animate-pulse flex items-center justify-center gap-2 text-xs text-muted-foreground"
+        >
+          <Camera className="w-4 h-4" /> Loading photo…
+        </div>
+      ) : uploaded.failed ? (
+        <p className="mb-3 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-2.5 text-xs text-muted-foreground flex items-center gap-2">
+          <Camera className="w-4 h-4 shrink-0" />
+          This meal's photo couldn't be loaded right now — try opening it again in a moment.
+        </p>
       ) : meal.fromPhoto ? (
         <p className="mb-3 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-2.5 text-xs text-muted-foreground flex items-center gap-2">
           <Camera className="w-4 h-4 shrink-0" />

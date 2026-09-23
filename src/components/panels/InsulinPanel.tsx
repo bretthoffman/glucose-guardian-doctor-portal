@@ -288,7 +288,13 @@ function MealCard({
             <div className="flex items-center gap-2">
               <span className={`font-medium ${meta.color}`}>{SLOT_LABEL[meal.slot]}</span>
               <span className="text-xs text-muted-foreground">{clock(meal.timestamp)}</span>
-              {meal.fromPhoto && <Camera className="w-3.5 h-3.5 text-muted-foreground" />}
+              {meal.hasPhoto ? (
+                <span title="Has a photo — open to view" className="inline-flex">
+                  <Camera className="w-3.5 h-3.5 text-primary" />
+                </span>
+              ) : (
+                meal.fromPhoto && <Camera className="w-3.5 h-3.5 text-muted-foreground" />
+              )}
             </div>
             <p className="text-sm text-foreground mt-0.5 line-clamp-2">{meal.name}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{meal.carbs}g carbs</p>

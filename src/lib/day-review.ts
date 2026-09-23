@@ -6,6 +6,7 @@ import type {
 } from "@doctor-portal/api-client-react";
 import { glucoseStatus, zonesFromSnapshot, type GlucoseZones } from "./glucose-metrics";
 import { readingAfter, readingBefore, type EventReading } from "./meal-glucose";
+import { mealHasViewablePhoto } from "./meal-photo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,8 @@ export interface DayMeal {
   proteinGrams: number | null;
   absorption: "fast" | "medium" | "slow" | null;
   fromPhoto: boolean;
+  /** A photo the portal can show (uploaded full-size, or the synced thumbnail). */
+  hasPhoto: boolean;
   units: number | null;
   doseType: DoseType | null;
   insulinType: string | null;
@@ -357,6 +360,7 @@ export function buildDayReview(s: PatientSnapshot, key: string): DayReview {
       proteinGrams: food.proteinGrams ?? null,
       absorption: food.absorption ?? null,
       fromPhoto: food.fromPhoto,
+      hasPhoto: mealHasViewablePhoto(food),
       units: dose?.units ?? null,
       doseType: dose?.type ?? null,
       insulinType: dose?.insulinType ?? null,

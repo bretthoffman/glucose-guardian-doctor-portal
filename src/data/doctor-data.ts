@@ -26,6 +26,7 @@ import type {
 import { USE_MOCK_DATA, mockMessages, mockSendMessage } from "./mock";
 import { caregiverKey, type CaregiverTitle, type CaregiverTitleEntry } from "./caregivers";
 import { normalizeOrgName, searchOrganizations } from "./organizations";
+import { hasUploadedPhoto } from "@/lib/meal-photo";
 import type { MockOrganization } from "./mock";
 /**
  * Patient data comes from the live Glucose Guardian backend, authenticated with the doctor's
@@ -225,6 +226,59 @@ function withCareLogs(snapshot: PatientSnapshot, logs: CareLogs | null): Patient
     ...snapshot,
     foodLog: mergeLogEntries(snapshot.foodLog ?? [], logs.food),
     insulinLog: mergeLogEntries(snapshot.insulinLog ?? [], logs.insulin),
+  };
+}
+
+// ---- Meal photos ----
+
+/** Formats shown as a meal photo — raster only, never an SVG or page the browser could run. */
+const MEAL_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/**
+ * A meal's full-size photo, which the app uploads to the server, as an object URL for an <img>
+ * (revoked on unmount). Fetched through the api-server with the doctor's session, only for meals
+ * flagged `hasPhoto`. `url` is null while loading, when there's none, or until the backend update
+ * is deployed; `failed` is set when a flagged photo couldn't be loaded.
+ */
+export function useMealPhoto(
+  accessCode: string,
+  food: FoodLogEntry | undefined,
+): { url: string | null; loading: boolean; failed: boolean } {
+  const entryId = hasUploadedPhoto(food) ? food!.id : null;
+  const query = useQuery({
+    queryKey: ["meal-photo", accessCode, entryId],
+    enabled: !!accessCode && !!entryId,
+    staleTime: 5 * 60_000,
+    gcTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async (): Promise<Blob | null> => {
+      try {
+        const blob = await customFetch<Blob>(
+          `/api/doctor/patient/${encodeURIComponent(accessCode)}/food-photos/${encodeURIComponent(entryId!)}`,
+          { responseType: "blob" },
+        );
+        return MEAL_PHOTO_TYPES.includes(blob.type) ? blob : null;
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 503)) return null;
+        throw e;
+      }
+    },
+  });
+  const blob = query.data ?? null;
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) {
+      setUrl(null);
+      return;
+    }
+    const next = URL.createObjectURL(blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [blob]);
+  return {
+    url: blob ? url : null,
+    loading: !!entryId && (query.isPending || (!!blob && !url)),
+    failed: !!entryId && (query.isError || (query.isSuccess && !blob)),
   };
 }
 
