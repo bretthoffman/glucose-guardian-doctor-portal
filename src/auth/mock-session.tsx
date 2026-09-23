@@ -8,8 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { DoctorProfile } from "@doctor-portal/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { setDoctorSessionRejectedHandler, type DoctorProfile } from "@doctor-portal/api-client-react";
 import { mockOrganizations, type MockOrganization } from "@/data/mock";
+import { toast } from "@/hooks/use-toast";
 import { clearDoctorSession, loadDoctorSession, storeDoctorSession } from "./doctor-auth";
 import { hashPin, setAccountPin, verifyAccountPin } from "./pin-backend";
 
@@ -36,6 +38,8 @@ interface SessionState {
    */
   accountHasPin?: boolean;
   doctor?: DoctorProfile;
+  /** When the server session ends (epoch ms, from sign-in). */
+  expiresAt?: number;
   locked: boolean;
   attempts: number;
 }
@@ -92,6 +96,7 @@ function loadState(): SessionState {
     pinHash: device.pinHash as string | undefined,
     accountHasPin: flagHasPin ?? session?.doctor?.hasPin,
     doctor: session?.doctor,
+    expiresAt: session?.expiresAt || undefined,
     locked: Boolean(flags.locked),
     attempts: Number(flags.attempts) || 0,
   };
@@ -127,6 +132,25 @@ function deriveStep(s: SessionState): SessionStep {
   return "ready";
 }
 
+/**
+ * The state after a sign-out. The cached PIN hash and hasPin belong to the doctor leaving — never
+ * leave them as a fallback for the next doctor on a shared clinic computer.
+ */
+function signedOut(prev: SessionState): SessionState {
+  return {
+    ...prev,
+    doctor: undefined,
+    expiresAt: undefined,
+    pinHash: undefined,
+    accountHasPin: undefined,
+    locked: false,
+    attempts: 0,
+  };
+}
+
+/** How often an open portal checks whether its session has run out. */
+const EXPIRY_CHECK_MS = 60 * 1000;
+
 const MockSessionContext = createContext<MockSessionValue | null>(null);
 export { MockSessionContext };
 
@@ -150,17 +174,21 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     clearDoctorSession();
-    setState((prev) => ({
-      ...prev,
-      doctor: undefined,
-      // The cached hash + hasPin belong to the doctor signing out — never leave them as a fallback
-      // for the next doctor on a shared clinic computer.
-      pinHash: undefined,
-      accountHasPin: undefined,
-      locked: false,
-      attempts: 0,
-    }));
+    setState(signedOut);
   }, []);
+
+  // The session ended without the doctor signing out (it expired, or the server rejected it), so
+  // say why on the way to the sign-in screen.
+  const endLapsedSession = useCallback(() => {
+    if (!stateRef.current.doctor) return;
+    signOut();
+    toast({
+      title: "You've been signed out",
+      description: "Your session ended. Sign in again to continue.",
+      // Longer than the default: the doctor may not be looking when it happens.
+      duration: 15_000,
+    });
+  }, [signOut]);
 
   const actions = useMemo<SessionActions>(
     () => ({
@@ -169,7 +197,13 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
       resetOrg: () => update({ orgId: undefined, orgName: undefined, orgDomains: undefined }),
       authenticate: (doctor, token, expiresAt) => {
         storeDoctorSession({ token, expiresAt, doctor });
-        update({ doctor, accountHasPin: doctor.hasPin, locked: false, attempts: 0 });
+        update({
+          doctor,
+          expiresAt: expiresAt || undefined,
+          accountHasPin: doctor.hasPin,
+          locked: false,
+          attempts: 0,
+        });
       },
       updateDoctor: (patch) =>
         setState((prev) => {
@@ -184,12 +218,13 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
         // Persist to the account so the PIN follows the doctor to any device. Best-effort: if the
         // backend route isn't live yet we still cache locally so this device works today.
         const persisted = await setAccountPin(pinHash);
-        setState((prev) => ({
-          ...prev,
-          pinHash,
-          accountHasPin: persisted ? true : prev.accountHasPin,
-          locked: false,
-        }));
+        // The session can end while that request is out (e.g. the server rejected it) — then there's
+        // no one to set a PIN for.
+        setState((prev) =>
+          prev.doctor
+            ? { ...prev, pinHash, accountHasPin: persisted ? true : prev.accountHasPin, locked: false }
+            : prev,
+        );
       },
       lock,
       unlock: async (pin) => {
@@ -199,23 +234,19 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
         // (route missing, offline, or no server PIN yet).
         const server = await verifyAccountPin(pinHash);
         const ok = server ?? (!!cached && cached === pinHash);
+        // If the session ended while verifying (the server rejected it), leave the signed-out state
+        // alone — in particular, don't write this doctor's PIN hash back for the next one.
         if (ok) {
           // Cache the verified hash so subsequent unlocks work instantly/offline on this device.
-          setState((prev) => ({ ...prev, pinHash, locked: false, attempts: 0 }));
+          setState((prev) => (prev.doctor ? { ...prev, pinHash, locked: false, attempts: 0 } : prev));
           return true;
         }
         setState((prev) => {
+          if (!prev.doctor) return prev;
           const attempts = prev.attempts + 1;
           if (attempts >= MAX_ATTEMPTS) {
             clearDoctorSession();
-            return {
-              ...prev,
-              doctor: undefined,
-              pinHash: undefined,
-              accountHasPin: undefined,
-              locked: false,
-              attempts: 0,
-            };
+            return signedOut(prev);
           }
           return { ...prev, attempts };
         });
@@ -242,6 +273,42 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
       events.forEach((e) => window.removeEventListener(e, reset));
     };
   }, [canLock, lock]);
+
+  // Signing out — by the doctor, after too many PIN attempts, or when the session lapses — drops
+  // every cached query (patient charts, logs, messages, meal photos) so none of it can show for
+  // whoever signs in next on this computer. This runs once the sign-in screen has replaced the
+  // app, so nothing is still subscribed to refetch. Locking keeps the cache: the same doctor returns.
+  const queryClient = useQueryClient();
+  const signedInAs = state.doctor ? (state.doctor.doctorId ?? "") : null;
+  const lastSignedInAs = useRef(signedInAs);
+  useEffect(() => {
+    if (lastSignedInAs.current !== null && lastSignedInAs.current !== signedInAs) queryClient.clear();
+    lastSignedInAs.current = signedInAs;
+  }, [signedInAs, queryClient]);
+
+  // A request sent with this session's token came back 401: the server no longer accepts it.
+  useEffect(() => {
+    setDoctorSessionRejectedHandler(endLapsedSession);
+    return () => setDoctorSessionRejectedHandler(null);
+  }, [endLapsedSession]);
+
+  // Sessions have a fixed lifetime. End it here too once it's past, rather than leaving an open
+  // tab (even a locked one) sitting on cached data while every request fails.
+  const signedIn = Boolean(state.doctor);
+  const { expiresAt } = state;
+  useEffect(() => {
+    if (!signedIn || !expiresAt) return;
+    const check = () => {
+      if (Date.now() >= expiresAt) endLapsedSession();
+    };
+    check();
+    const timer = window.setInterval(check, EXPIRY_CHECK_MS);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [signedIn, expiresAt, endLapsedSession]);
 
   const value = useMemo<MockSessionValue>(() => {
     // Prefer the org identity captured at pick time (covers server-directory orgs that aren't in

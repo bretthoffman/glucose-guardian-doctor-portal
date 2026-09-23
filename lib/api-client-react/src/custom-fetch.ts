@@ -12,6 +12,28 @@ export function setDoctorAuthToken(token: string | null): void {
   doctorAuthToken = token;
 }
 
+/**
+ * Called when the server rejects the current doctor session: a request sent with its Bearer token
+ * came back 401 (the session expired or was ended). Sign-in calls are excluded — their 401 means a
+ * wrong password or code, not a dead session.
+ */
+let onDoctorSessionRejected: (() => void) | null = null;
+export function setDoctorSessionRejectedHandler(handler: (() => void) | null): void {
+  onDoctorSessionRejected = handler;
+}
+
+const SIGN_IN_PATHS = ["/api/doctor/auth/login", "/api/doctor/login"];
+
+function isSignInRequest(url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url, "http://localhost").pathname;
+  } catch {
+    /* keep the raw url */
+  }
+  return SIGN_IN_PATHS.some((p) => path.endsWith(p));
+}
+
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
@@ -332,8 +354,10 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
-  if (doctorAuthToken && !headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${doctorAuthToken}`);
+  // The session token this request carries (a caller-supplied Authorization header isn't ours).
+  const sentToken = doctorAuthToken && !headers.has("authorization") ? doctorAuthToken : null;
+  if (sentToken) {
+    headers.set("authorization", `Bearer ${sentToken}`);
   }
 
   const resolvedInput = resolveRequestInput(input);
@@ -342,6 +366,16 @@ export async function customFetch<T = unknown>(
   const response = await fetch(resolvedInput, { ...init, method, headers });
 
   if (!response.ok) {
+    // Only for the session still in use: a late reply to a request from a session that has since
+    // ended must not sign out whoever is signed in now.
+    if (
+      response.status === 401 &&
+      sentToken &&
+      sentToken === doctorAuthToken &&
+      !isSignInRequest(requestInfo.url)
+    ) {
+      onDoctorSessionRejected?.();
+    }
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }
