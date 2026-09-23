@@ -40,7 +40,7 @@ import { GlucoseChart } from "@/components/GlucoseChart";
 // ── Customizable widget registry ─────────────────────────────────────────────
 const STORAGE_KEY = "gg_overview_widgets";
 
-type WidgetGroup = "kpi" | "chart" | "module";
+type WidgetGroup = "kpi" | "chart" | "wide" | "module";
 interface WidgetDef {
   id: string;
   label: string;
@@ -54,7 +54,7 @@ const WIDGETS: WidgetDef[] = [
   { id: "insulinToday", label: "Insulin Today", group: "kpi" },
   { id: "tar", label: "Time Above Range", group: "kpi" },
   { id: "cgm", label: "CGM Chart", group: "chart" },
-  { id: "dose", label: "Dose Calculation", group: "module" },
+  { id: "dose", label: "Dose Calculation", group: "wide" },
   { id: "ratios", label: "Ratios & Factors", group: "module" },
   { id: "patterns", label: "Detected Patterns", group: "module" },
   { id: "readings", label: "Recent Readings", group: "module" },
@@ -522,7 +522,9 @@ export function OverviewPanel({
   const kpis = WIDGETS.filter((w) => w.group === "kpi" && visible[w.id]);
   const modules = WIDGETS.filter((w) => w.group === "module" && visible[w.id]);
   const showChart = !!visible["cgm"];
-  const nothingVisible = kpis.length === 0 && modules.length === 0 && !showChart;
+  // Full-width sections (the dose formula reads left to right, so it can't sit in a column).
+  const wides = WIDGETS.filter((w) => w.group === "wide" && visible[w.id]);
+  const nothingVisible = kpis.length === 0 && modules.length === 0 && wides.length === 0 && !showChart;
 
   return (
     <div className="space-y-5">
@@ -588,6 +590,10 @@ export function OverviewPanel({
           )}
 
           {showChart && renderWidget("cgm")}
+
+          {wides.map((w) => (
+            <div key={w.id}>{renderWidget(w.id)}</div>
+          ))}
 
           {modules.length > 0 && (
             <div className="columns-1 md:columns-2 xl:columns-3 gap-5">

@@ -1,285 +1,203 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import { AlertTriangle, CheckCircle2, ChevronDown, Info, NotebookPen } from "lucide-react";
 import { useSendDoctorMessage, type PatientSnapshot } from "@doctor-portal/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useProposeOrder } from "@/data/doctor-data";
-import type { PatientDetail, TherapyOrderValues } from "@/data/contracts";
+import type { PatientDetail } from "@/data/contracts";
 import { calculateDose, typicalCarbs, type DoseCalculation } from "@/lib/dose-calc";
 import { RAPID_DIA_MIN, REGULAR_DIA_MIN, formatAgeShort } from "@/lib/app-dose/onBoard";
 import { INSULIN_TYPE_LABEL } from "@/lib/app-dose/insulin";
 import { formatTime } from "@/lib/utils";
 
-type LineKey = "correction" | "carb" | "activeCarbs" | "activeInsulin" | "dose";
-
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const u = (n: number) => `${r2(n)}u`;
 const ago = (min: number | null) => (min != null && min >= 1 ? `${formatAgeShort(min)} ago` : "just now");
 
-/** Doctor-facing wording of the app's own per-card explanations (utils/doseExplain in the app). */
-function explain(key: LineKey, c: DoseCalculation): string[] {
+/** What each part contributes right now — these add up to the app's subtotal. */
+function parts(c: DoseCalculation) {
+  const d = c.breakdown;
+  const held = d.correctionHeldUnits > 0.001;
+  return {
+    held,
+    correction: held ? 0 : Math.max(0, d.correctionInsulin + d.resistanceBump + d.trendAdjustment),
+    activeCarbs: d.uncoveredCarbInsulin,
+    activeInsulin: held ? 0 : d.iobCredit,
+  };
+}
+
+/** Doctor-facing wording of the app's own per-part explanations (utils/doseExplain in the app). */
+function howItWorks(c: DoseCalculation, meal: DoseCalculation | null): { title: string; lines: string[] }[] {
   const d = c.breakdown;
   const cf = c.settings.correctionFactor;
   const cr = c.settings.carbRatio;
-  const held = d.correctionHeldUnits > 0.001;
-  switch (key) {
-    case "correction": {
-      const lines = d.correctionSuppressed
-        ? [`The reading (${c.bg.value} mg/dL) is at or below the ${c.target} mg/dL target, so no correction is added.`]
-        : [`(${c.bg.value} − ${c.target}) ÷ correction factor ${cf} = ${u(d.correctionInsulin)}.`];
-      if (d.resistanceBump > 0.001)
-        lines.push(`Above 300 mg/dL the app adds 10% (${u(d.resistanceBump)}) because corrections under-deliver that high.`);
-      if (Math.abs(d.trendAdjustment) >= 0.005)
-        lines.push(
-          `Trend ${d.trendLabel} ${d.trendAdjustment > 0 ? "adds" : "trims"} ${u(Math.abs(d.trendAdjustment))}: the change expected over the next 30 min ÷ ${cf} (capped at ±2u).`,
-        );
-      else if (d.hyperTrendZeroed)
-        lines.push(`Glucose is falling but still high, so the usual falling-trend reduction is skipped.`);
-      if (held)
-        lines.push(
-          `A dose ${ago(c.activeInsulin.lastDoseAgeMin)} is still in its onset lag, so this correction (${u(d.correctionHeldUnits)}) is on hold for ~${d.correctionHoldRemainingMin} more min to avoid stacking.`,
-        );
-      return lines;
-    }
-    case "carb":
-      return c.carbs > 0
-        ? [`${c.carbs} g ÷ carb ratio ${cr} = ${u(d.carbInsulin)}.`, `Carb insulin is never reduced by insulin on board — food is always covered in full.`]
-        : [`No carbs entered, so no carb dose. Enter grams above to see a meal dose.`];
-    case "activeCarbs": {
-      if (!(c.activeCarbs.totalGrams > 0)) return [`Nothing from recent meals is still absorbing.`];
-      const lines = [
-        `About ${c.activeCarbs.totalGrams} g from food logged ${ago(c.activeCarbs.lastEntryAgeMin)} are still absorbing — ${u(d.activeCarbInsulin)} at the carb ratio (fast 2 h, medium 3 h, slow 4 h absorption).`,
-      ];
-      lines.push(
-        d.uncoveredCarbInsulin > 0.001
-          ? `Insulin on board covers part of it; the uncovered ${u(d.uncoveredCarbInsulin)} is added.`
-          : `Insulin already on board covers them, so nothing is added here.`,
-      );
-      return lines;
-    }
-    case "activeInsulin": {
-      if (!(d.activeInsulinUnits > 0)) return [`No mealtime insulin is still active, so nothing is subtracted.`];
-      const src =
-        c.activeInsulin.doseCount > 1 ? `${c.activeInsulin.doseCount} recent doses` : `a dose ${ago(c.activeInsulin.lastDoseAgeMin)}`;
-      const lines = [
-        `${u(d.activeInsulinUnits)} still active from ${src} (curvilinear decay; basal insulin never counts).`,
-      ];
-      if (d.activeCarbInsulin > 0.001)
-        lines.push(`It's netted against the ${u(d.activeCarbInsulin)} of absorbing carbs first — only the surplus is credited.`);
-      if (d.iobDiscounted)
-        lines.push(`Glucose is high and not falling despite it, so only half of the older insulin is credited.`);
-      if (held) lines.push(`No credit is taken while the correction is on hold.`);
-      else if (d.iobCredit > 0.001)
-        lines.push(`${u(d.iobCredit)} is subtracted from the correction only — never from the carb dose.`);
-      else lines.push(`There's no correction for it to reduce, so it doesn't change the dose.`);
-      return lines;
-    }
-    case "dose": {
-      const lines = [`Subtotal ${u(d.subTotal)}.`];
-      if (Math.abs(d.patternDelta) >= 0.005)
-        lines.push(
-          `Pattern adjustment ×${d.patternFactor} (${d.patternDelta > 0 ? "+" : "−"}${u(Math.abs(d.patternDelta))}): ${c.settings.bucketLabel.toLowerCase()} doses given over the last 2 weeks ran ${d.patternFactor > 1 ? "above" : "below"} the app's suggestions (${c.tuning.sampleCount} doses). The saved settings are unchanged.`,
-        );
-      if (d.cappedAtMax)
-        lines.push(`Capped at the ${u(d.maxDoseCap)} single-dose safety limit${c.breakdown.maxDoseCap === 10 ? "" : " (0.2 u/kg of body weight)"}.`);
-      lines.push(`${u(d.totalRaw)} rounds to ${u(d.totalDose)} (nearest half unit).`);
-      return lines;
-    }
-  }
+  const { held } = parts(c);
+
+  const correction = d.correctionSuppressed
+    ? [`The reading (${c.bg.value} mg/dL) is at or below the ${c.target} mg/dL target, so no correction is added.`]
+    : [`(${c.bg.value} − ${c.target}) ÷ ${cf} = ${u(d.correctionInsulin)}.`];
+  if (d.resistanceBump > 0.001)
+    correction.push(`Above 300 mg/dL the app adds 10% (${u(d.resistanceBump)}) because corrections under-deliver that high.`);
+  if (Math.abs(d.trendAdjustment) >= 0.005)
+    correction.push(
+      `Trend ${d.trendLabel} ${d.trendAdjustment > 0 ? "adds" : "trims"} ${u(Math.abs(d.trendAdjustment))} — the change expected over the next 30 min ÷ ${cf}, capped at ±2u.`,
+    );
+  else if (d.hyperTrendZeroed) correction.push(`Glucose is falling but still high, so the falling-trend reduction is skipped.`);
+  if (held)
+    correction.push(
+      `A dose given ${ago(c.activeInsulin.lastDoseAgeMin)} is still taking effect, so this correction (${u(d.correctionHeldUnits)}) is on hold for ~${d.correctionHoldRemainingMin} more min to avoid stacking.`,
+    );
+
+  const carbs = [
+    `Carbs eaten ÷ ${cr}: 1 unit for every ${cr} g, never reduced by insulin on board.`,
+    ...(meal ? [`For this window's typical ${meal.carbs} g meal that's ${meal.carbs} ÷ ${cr} = ${u(meal.breakdown.carbInsulin)}.`] : []),
+  ];
+
+  const activeCarbs =
+    c.activeCarbs.totalGrams > 0
+      ? [
+          `About ${c.activeCarbs.totalGrams} g from food logged ${ago(c.activeCarbs.lastEntryAgeMin)} are still absorbing — ${u(d.activeCarbInsulin)} at the carb ratio (fast meals 2 h, medium 3 h, slow 4 h).`,
+          d.uncoveredCarbInsulin > 0.001
+            ? `Insulin on board covers part of it; the uncovered ${u(d.uncoveredCarbInsulin)} is added.`
+            : `Insulin already on board covers them, so nothing is added.`,
+        ]
+      : [`Nothing from recent meals is still absorbing.`];
+
+  const activeInsulin =
+    d.activeInsulinUnits > 0
+      ? [
+          `${u(d.activeInsulinUnits)} still active from ${c.activeInsulin.doseCount > 1 ? `${c.activeInsulin.doseCount} recent doses` : `a dose ${ago(c.activeInsulin.lastDoseAgeMin)}`} (mealtime insulin only — basal never counts).`,
+          ...(d.activeCarbInsulin > 0.001
+            ? [`It's netted against the ${u(d.activeCarbInsulin)} of absorbing carbs first; only the surplus is credited.`]
+            : []),
+          ...(d.iobDiscounted ? [`Glucose is high and not falling despite it, so only half of the older insulin is credited.`] : []),
+          held
+            ? `No credit is taken while the correction is on hold.`
+            : d.iobCredit > 0.001
+              ? `${u(d.iobCredit)} comes off the correction only — never off the carb dose.`
+              : `There's no correction for it to reduce right now.`,
+        ]
+      : [`No mealtime insulin is still active.`];
+
+  const suggestion = [`Now: ${u(d.subTotal)}${Math.abs(d.patternDelta) >= 0.005 ? ` × ${d.patternFactor} pattern` : ""} → ${u(d.totalDose)} (rounded to the nearest ½ unit).`];
+  if (Math.abs(d.patternDelta) >= 0.005)
+    suggestion.push(
+      `The ×${d.patternFactor} pattern adjustment comes from ${c.tuning.sampleCount} ${c.settings.bucketLabel.toLowerCase()} doses over the last 2 weeks that ran ${d.patternFactor > 1 ? "above" : "below"} the app's suggestions. The saved settings are unchanged.`,
+    );
+  if (meal?.breakdown.cappedAtMax) suggestion.push(`With the typical meal it's capped at the ${u(meal.breakdown.maxDoseCap)} single-dose safety limit.`);
+
+  return [
+    { title: "Correct BG", lines: correction },
+    { title: "Carb dose", lines: carbs },
+    { title: "Active carbs", lines: activeCarbs },
+    { title: "Active insulin", lines: activeInsulin },
+    { title: "Suggestion", lines: suggestion },
+  ];
 }
 
-function Line({
-  op,
-  label,
-  value,
-  sub,
-  open,
-  onToggle,
-  details,
-  strong = false,
-}: {
-  op: string;
-  label: string;
-  value: string;
-  sub: string;
-  open: boolean;
-  onToggle: () => void;
-  details: string[];
-  strong?: boolean;
-}) {
+function Term({ title, math, value, note }: { title: string; math: string; value: string; note?: string }) {
   return (
-    <div className={strong ? "border-t border-border pt-2 mt-1" : ""}>
-      <button onClick={onToggle} className="w-full flex items-start gap-2 text-left rounded-lg px-1.5 py-1.5 -mx-1.5 hover:bg-secondary/50">
-        <span className="w-4 text-center text-muted-foreground font-medium shrink-0">{op}</span>
-        <span className="min-w-0 flex-1">
-          <span className={`block text-sm ${strong ? "font-semibold text-foreground" : "text-foreground"}`}>{label}</span>
-          <span className="block text-[11px] text-muted-foreground">{sub}</span>
-        </span>
-        <span className={`font-display shrink-0 ${strong ? "text-lg font-bold text-primary" : "text-sm font-semibold text-foreground"}`}>
-          {value}
-        </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground shrink-0 mt-1 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <ul className="ml-6 mb-1.5 space-y-1">
-          {details.map((d) => (
-            <li key={d} className="text-[11px] text-muted-foreground leading-snug">
-              {d}
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="rounded-xl border border-border bg-secondary/30 p-3 min-w-0">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{title}</p>
+      <p className="text-xs text-muted-foreground mt-1">{math}</p>
+      <p className="text-lg font-display font-bold text-foreground leading-tight mt-0.5">{value}</p>
+      {note && <p className="text-[11px] text-muted-foreground mt-0.5">{note}</p>}
     </div>
   );
 }
 
-/** Propose new all-day settings (caregiver approves in the app) — or, with no change, send a note. */
-function SuggestChange({ detail, calc, onDone }: { detail: PatientDetail; calc: DoseCalculation; onDone: (msg: string) => void }) {
-  const active = detail.activeOrder;
-  const [carbRatio, setCarbRatio] = useState(String(active?.carbRatio ?? ""));
-  const [correctionFactor, setCorrectionFactor] = useState(String(active?.correctionFactor ?? ""));
-  const [targetGlucose, setTargetGlucose] = useState(String(active?.targetGlucose ?? ""));
+function Op({ children }: { children: ReactNode }) {
+  return (
+    <span className="self-center justify-self-center text-lg font-semibold text-muted-foreground px-0.5" aria-hidden>
+      {children}
+    </span>
+  );
+}
+
+/** A note to the parents about the calculation (settings changes are proposed in Treatment Settings). */
+function NoteToParents({ detail, calc, onDone }: { detail: PatientDetail; calc: DoseCalculation; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const propose = useProposeOrder();
-  const sendMessage = useSendDoctorMessage();
-  const num = (s: string) => (s.trim() === "" || Number.isNaN(Number(s)) ? undefined : Number(s));
-  const changed =
-    num(carbRatio) !== active?.carbRatio ||
-    num(correctionFactor) !== active?.correctionFactor ||
-    num(targetGlucose) !== active?.targetGlucose;
-  const pendingProposal = !!detail.proposedOrder;
-  const busy = propose.isPending || sendMessage.isPending;
-  const canSend = note.trim().length > 0 && !busy && !(changed && (pendingProposal || !detail.canPrescribe));
+  const [, setLocation] = useLocation();
+  const send = useSendDoctorMessage();
+  const s = calc.settings;
 
-  const submit = async () => {
+  const submit = () => {
     setError(null);
-    if (changed) {
-      const values: TherapyOrderValues = {
-        carbRatio: num(carbRatio),
-        correctionFactor: num(correctionFactor),
-        targetGlucose: num(targetGlucose),
-        insulinTypes: active?.insulinTypes,
-        alertThresholds: active?.alertThresholds,
-      };
-      try {
-        await propose.mutate({ patientId: detail.patientId, baseVersion: active?.version ?? 0, values, note: note.trim() });
-        onDone("Change proposed — the caregiver confirms it in the app.");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not send the proposal.");
-      }
-      return;
-    }
-    const s = calc.settings;
     const context = `About the dose calculator (${s.bucketLabel.toLowerCase()} settings: carb ratio 1:${s.carbRatio}, correction factor 1:${s.correctionFactor}, target ${calc.target} mg/dL):`;
-    sendMessage.mutate(
+    send.mutate(
       { accessCode: detail.accessCode, data: { text: `${context}\n${note.trim()}`, sender: "doctor" } },
-      {
-        onSuccess: () => onDone("Note sent to the parents."),
-        onError: () => setError("Could not send the note. Try again."),
-      },
+      { onSuccess: onDone, onError: () => setError("Could not send the note. Try again.") },
     );
   };
 
-  const field = (label: string, value: string, set: (v: string) => void, unit: string) => (
-    <label className="block min-w-0">
-      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{label}</span>
-      <span className="flex items-center gap-1">
-        <Input value={value} onChange={(e) => set(e.target.value)} inputMode="decimal" className="h-8 text-sm px-2" />
-        <span className="text-[10px] text-muted-foreground shrink-0">{unit}</span>
-      </span>
-    </label>
-  );
-
   return (
-    <div className="mt-3 rounded-xl border border-border bg-secondary/30 p-3 space-y-2.5">
-      <p className="text-sm font-medium text-foreground">Suggest a change</p>
-      <div className="grid grid-cols-3 gap-2">
-        {field("Carb ratio", carbRatio, setCarbRatio, "g/u")}
-        {field("Correction", correctionFactor, setCorrectionFactor, "mg/dL")}
-        {field("Target", targetGlucose, setTargetGlucose, "mg/dL")}
-      </div>
-      {calc.settings.usedOverride && (
-        <p className="text-[11px] text-muted-foreground">
-          {calc.settings.bucketLabel} uses its own setting in the app. These fields change the all-day values — describe
-          meal-time changes in the note.
-        </p>
-      )}
+    <div className="mt-3 rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
       <Textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={3}
         placeholder="What should change, and why?"
         className="text-sm"
-        aria-label="Note (required)"
+        aria-label="Note"
       />
-      {changed && pendingProposal && (
-        <p className="text-[11px] text-amber-600">A change is already awaiting the caregiver's approval — send a note instead.</p>
-      )}
       {error && <p className="text-[11px] text-destructive">{error}</p>}
-      <div>
-        <Button size="sm" disabled={!canSend} onClick={submit}>
-          {changed ? "Send proposal to caregiver" : "Send note to parents"}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <Button size="sm" disabled={!note.trim() || send.isPending} onClick={submit}>
+          Send note to parents
         </Button>
-        <p className="text-[11px] text-muted-foreground mt-1.5">
-          {changed
-            ? "They approve or decline it in the app, with your note."
-            : "Arrives in their Doctor thread. Change a value above to send it as a proposal instead."}
-        </p>
+        <button
+          onClick={() => setLocation(`/patient/${detail.accessCode}/orders`)}
+          className="text-xs text-primary hover:underline"
+        >
+          Propose new settings instead
+        </button>
       </div>
+      <p className="text-[11px] text-muted-foreground">Arrives in the parents' Doctor thread in the app.</p>
     </div>
   );
 }
 
 /**
- * "Dose Calculation" for the Overview: the app's own calculator run live on this patient's data —
- * Correct BG + Carb Dose + Active Carbs − Active Insulin = Dose — with each step's math on click,
- * the settings it used, and a way to suggest a change.
+ * "Dose Calculation" for the Overview, read-only: the app's own calculator run on this patient's
+ * data right now, shown as its formula — Correct BG + Carb dose + Active carbs − Active insulin —
+ * with the current numbers under each part and what it's suggesting.
  */
 export function DoseCalculationCard({ snapshot, detail }: { snapshot: PatientSnapshot; detail?: PatientDetail }) {
-  const [carbsText, setCarbsText] = useState(() => {
-    const typical = typicalCarbs(snapshot);
-    return typical > 0 ? String(typical) : "";
-  });
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
-  const carbs = Math.max(0, Math.min(500, Number(carbsText) || 0));
-  const calc = useMemo(() => calculateDose(snapshot, carbs, now), [snapshot, carbs, now]);
-  const [open, setOpen] = useState<LineKey | null>(null);
-  const [suggesting, setSuggesting] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
-  const toggle = (k: LineKey) => setOpen((o) => (o === k ? null : k));
+  const typical = useMemo(() => typicalCarbs(snapshot, now), [snapshot, now]);
+  const calc = useMemo(() => calculateDose(snapshot, 0, now), [snapshot, now]);
+  const meal = useMemo(() => (typical > 0 ? calculateDose(snapshot, typical, now) : null), [snapshot, typical, now]);
+  const [showMath, setShowMath] = useState(false);
+  const [noting, setNoting] = useState(false);
+  const [sent, setSent] = useState(false);
 
   if (!calc) {
     return <p className="text-sm text-muted-foreground">No recent CGM reading, so the app's calculator has nothing to start from.</p>;
   }
   const d = calc.breakdown;
-  const held = d.correctionHeldUnits > 0.001;
-  const correctionShown = held ? 0 : Math.max(0, d.correctionInsulin + d.resistanceBump + d.trendAdjustment);
-  const warning = d.warnings[0];
   const s = calc.settings;
+  const p = parts(calc);
+  const warning = d.warnings[0];
   const dia = calc.insulin?.type === "regular" || calc.insulin?.type === "premixed" ? REGULAR_DIA_MIN : RAPID_DIA_MIN;
+  const signed = (n: number, sign: "+" | "−") => `${sign}${u(n)}`;
 
   return (
     <div>
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">If they eat</span>
-        <Input
-          value={carbsText}
-          onChange={(e) => setCarbsText(e.target.value.replace(/[^\d.]/g, ""))}
-          inputMode="decimal"
-          className="h-8 w-16 text-sm px-2"
-          aria-label="Carbs in grams"
-        />
-        <span className="text-muted-foreground">g of carbs now</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Current formula · {s.bucketLabel} settings ({s.bucketHours})
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {formatTime(calc.bg.timestamp)} reading: {calc.bg.value} mg/dL, {calc.bg.trend.label.toLowerCase()} {calc.bg.trend.arrow}
+        </p>
       </div>
-      <p className="text-[11px] text-muted-foreground mt-1">
-        Using the {formatTime(calc.bg.timestamp)} reading ({calc.bg.value} mg/dL, {calc.bg.trend.label.toLowerCase()} {calc.bg.trend.arrow}) and{" "}
-        {s.bucketLabel.toLowerCase()} settings ({s.bucketHours}).
+      <p className="text-sm font-medium text-foreground mt-1.5">
+        Dose = (BG − Target) ÷ Correction factor + Carbs ÷ Carb ratio + Active carbs − Active insulin
       </p>
 
       {d.basalSuppressed ? (
@@ -287,122 +205,132 @@ export function DoseCalculationCard({ snapshot, detail }: { snapshot: PatientSna
           The only insulin set up in the app is basal, which isn't dosed from carbs or corrections — the calculator suggests nothing.
         </p>
       ) : (
-        <div className="mt-3">
-          <Line
-            op=""
-            label="Correct BG"
-            value={`${correctionShown > 0 ? "+" : ""}${u(correctionShown)}`}
-            sub={
+        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1.15fr]">
+          <Term
+            title="Correct BG"
+            math={
               d.correctionSuppressed
-                ? `At/below the ${calc.target} target`
-                : held
-                  ? `${u(d.correctionHeldUnits)} on hold — recent dose`
-                  : `(${calc.bg.value} − ${calc.target}) ÷ ${s.correctionFactor}${Math.abs(d.trendAdjustment) >= 0.005 ? ` · trend ${d.trendAdjLabel}u` : ""}`
+                ? `${calc.bg.value} is at/below target ${calc.target}`
+                : `(${calc.bg.value} − ${calc.target}) ÷ ${s.correctionFactor}${Math.abs(d.trendAdjustment) >= 0.005 ? ` ${d.trendAdjustment > 0 ? "+" : "−"} ${r2(Math.abs(d.trendAdjustment))} trend` : ""}`
             }
-            open={open === "correction"}
-            onToggle={() => toggle("correction")}
-            details={explain("correction", calc)}
+            value={signed(p.correction, "+")}
+            note={p.held ? `${u(d.correctionHeldUnits)} on hold — recent dose` : undefined}
           />
-          <Line
-            op="+"
-            label="Carb dose"
-            value={`+${u(d.carbInsulin)}`}
-            sub={carbs > 0 ? `${carbs} g ÷ ${s.carbRatio}` : "No carbs entered"}
-            open={open === "carb"}
-            onToggle={() => toggle("carb")}
-            details={explain("carb", calc)}
+          <Op>+</Op>
+          <Term title="Carb dose" math={`Carbs ÷ ${s.carbRatio}`} value={`1u / ${s.carbRatio} g`} note="Food is always covered in full" />
+          <Op>+</Op>
+          <Term
+            title="Active carbs"
+            math={calc.activeCarbs.totalGrams > 0 ? `${calc.activeCarbs.totalGrams} g still absorbing` : "Nothing absorbing"}
+            value={signed(p.activeCarbs, "+")}
+            note={calc.activeCarbs.totalGrams > 0 && p.activeCarbs <= 0.001 ? "Covered by insulin on board" : undefined}
           />
-          <Line
-            op="+"
-            label="Active carbs"
-            value={`+${u(d.uncoveredCarbInsulin)}`}
-            sub={calc.activeCarbs.totalGrams > 0 ? `${calc.activeCarbs.totalGrams} g still absorbing` : "Nothing absorbing"}
-            open={open === "activeCarbs"}
-            onToggle={() => toggle("activeCarbs")}
-            details={explain("activeCarbs", calc)}
+          <Op>−</Op>
+          <Term
+            title="Active insulin"
+            math={d.activeInsulinUnits > 0 ? `${u(d.activeInsulinUnits)} on board` : "None on board"}
+            value={signed(p.activeInsulin, "−")}
+            note={d.iobDiscounted ? "Half credited — glucose not falling" : undefined}
           />
-          <Line
-            op="−"
-            label="Active insulin"
-            value={`−${u(held ? 0 : d.iobCredit)}`}
-            sub={d.activeInsulinUnits > 0 ? `${u(d.activeInsulinUnits)} on board${d.iobDiscounted ? " · half credited" : ""}` : "None on board"}
-            open={open === "activeInsulin"}
-            onToggle={() => toggle("activeInsulin")}
-            details={explain("activeInsulin", calc)}
-          />
-          <Line
-            op="="
-            label="Suggested dose"
-            value={u(d.totalDose)}
-            sub={[
-              Math.abs(d.patternDelta) >= 0.005 ? `pattern ×${d.patternFactor}` : null,
-              d.cappedAtMax ? `capped at ${u(d.maxDoseCap)}` : null,
-              "rounded to ½u",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-            open={open === "dose"}
-            onToggle={() => toggle("dose")}
-            details={explain("dose", calc)}
-            strong
-          />
+          <Op>=</Op>
+          <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 min-w-0">
+            <p className="text-[10px] uppercase tracking-wide text-primary">Suggesting</p>
+            <p className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-lg font-display font-bold text-primary leading-tight">{u(d.totalDose)}</span>
+              <span className="text-xs text-muted-foreground">right now, before food</span>
+            </p>
+            {meal && (
+              <p className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="text-lg font-display font-bold text-primary leading-tight">{u(meal.breakdown.totalDose)}</span>
+                <span className="text-xs text-muted-foreground">
+                  with a typical {meal.carbs} g {s.bucketLabel.toLowerCase()}
+                </span>
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {[
+                Math.abs(d.patternDelta) >= 0.005 || (meal && Math.abs(meal.breakdown.patternDelta) >= 0.005)
+                  ? `×${calc.tuning.factor} pattern`
+                  : null,
+                meal?.breakdown.cappedAtMax ? `capped at ${u(meal.breakdown.maxDoseCap)}` : null,
+                "rounded to ½u",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
         </div>
       )}
 
       {warning && (
         <p
-          className={`mt-2 text-[11px] flex items-start gap-1.5 ${warning.level === "info" ? "text-muted-foreground" : "text-amber-600"}`}
+          className={`mt-2.5 text-[11px] flex items-start gap-1.5 ${warning.level === "info" ? "text-muted-foreground" : "text-amber-600"}`}
         >
           {warning.level === "info" ? <Info className="w-3.5 h-3.5 shrink-0 mt-px" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />}
           <span>{warning.message}</span>
         </p>
       )}
 
-      <div className="mt-3 pt-3 border-t border-border/60 space-y-1 text-[11px] text-muted-foreground">
-        <p>
-          <span className="text-foreground font-medium">Settings used:</span> carb ratio 1:{s.carbRatio}
-          {s.carbRatio !== calc.base.carbRatio && ` (${s.bucketLabel.toLowerCase()} only; all-day 1:${calc.base.carbRatio})`} · correction 1:
-          {s.correctionFactor}
-          {s.correctionFactor !== calc.base.correctionFactor && ` (${s.bucketLabel.toLowerCase()} only; all-day 1:${calc.base.correctionFactor})`} ·
-          target {calc.target} mg/dL
-        </p>
-        <p>
-          {calc.insulin
-            ? `${calc.insulin.name} (${INSULIN_TYPE_LABEL[calc.insulin.type].toLowerCase()}, ${dia / 60} h action)`
-            : "Insulin type not set — counted as rapid-acting (4 h action)"}{" "}
-          · safety cap {u(d.maxDoseCap)}
-          {d.maxDoseCap !== 10 ? " (by weight)" : ""}
-          {calc.tuning.factor !== 1 && ` · pattern ×${calc.tuning.factor} from ${calc.tuning.sampleCount} recent doses`}
-        </p>
-        {calc.defaulted.length > 0 && (
-          <p className="text-amber-600">Not saved for this patient, so the app's default is used: {calc.defaulted.join(", ")}.</p>
-        )}
-        <p>Same math as the app's dose calculator. Click a line to see how it was worked out.</p>
+      <div className="mt-3 pt-3 border-t border-border/60 flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <div className="space-y-1 text-[11px] text-muted-foreground min-w-0 flex-1">
+          <p>
+            <span className="text-foreground font-medium">Settings used:</span> carb ratio 1:{s.carbRatio}
+            {s.carbRatio !== calc.base.carbRatio && ` (${s.bucketLabel.toLowerCase()} only; all-day 1:${calc.base.carbRatio})`} · correction factor 1:
+            {s.correctionFactor}
+            {s.correctionFactor !== calc.base.correctionFactor && ` (${s.bucketLabel.toLowerCase()} only; all-day 1:${calc.base.correctionFactor})`} · target{" "}
+            {calc.target} mg/dL ·{" "}
+            {calc.insulin
+              ? `${calc.insulin.name} (${INSULIN_TYPE_LABEL[calc.insulin.type].toLowerCase()}, ${dia / 60} h action)`
+              : "insulin type not set (counted as rapid-acting, 4 h action)"}{" "}
+            · safety cap {u(d.maxDoseCap)}
+            {d.maxDoseCap !== 10 ? " by weight" : ""}
+          </p>
+          {calc.defaulted.length > 0 && (
+            <p className="text-amber-600">Not saved for this patient, so the app's default is used: {calc.defaulted.join(", ")}.</p>
+          )}
+          <p>Same math as the app's dose calculator.</p>
+        </div>
+        <button
+          onClick={() => setShowMath((v) => !v)}
+          className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0"
+        >
+          {showMath ? "Hide the math" : "Show the math"}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMath ? "rotate-180" : ""}`} />
+        </button>
       </div>
 
+      {showMath && (
+        <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {howItWorks(calc, meal).map((part) => (
+            <div key={part.title}>
+              <p className="text-xs font-medium text-foreground">{part.title}</p>
+              <ul className="mt-1 space-y-1">
+                {part.lines.map((line) => (
+                  <li key={line} className="text-[11px] text-muted-foreground leading-snug">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
       {detail &&
-        (done ? (
+        (sent ? (
           <p className="mt-3 text-sm text-success flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4" /> {done}
+            <CheckCircle2 className="w-4 h-4" /> Note sent to the parents.
           </p>
-        ) : suggesting ? (
-          <SuggestChange
-            detail={detail}
-            calc={calc}
-            onDone={(msg) => {
-              setDone(msg);
-              setSuggesting(false);
-            }}
-          />
+        ) : noting ? (
+          <NoteToParents detail={detail} calc={calc} onDone={() => setSent(true)} />
         ) : (
           <button
-            onClick={() => setSuggesting(true)}
-            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            onClick={() => setNoting(true)}
+            className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
           >
-            <NotebookPen className="w-4 h-4" /> Suggest a change
+            <NotebookPen className="w-4 h-4" /> Add a note about a change
           </button>
         ))}
     </div>
   );
 }
-
