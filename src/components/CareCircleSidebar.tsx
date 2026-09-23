@@ -43,7 +43,18 @@ function initials(name: string): string {
 export function CareCircleSidebar({ accessCode }: { accessCode: string }) {
   const members = useCareCircle(accessCode);
   const [, setLocation] = useLocation();
-  if (!members?.length) return null;
+  if (members === null) {
+    // The backend update that serves the roster isn't deployed yet — say so instead of hiding.
+    return (
+      <div className="px-3 pb-3">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground px-1 mt-2 mb-1">Care Circle</p>
+        <p className="text-[11px] text-muted-foreground px-1 leading-snug">
+          Shows everyone in the patient's circle once the latest backend update is deployed.
+        </p>
+      </div>
+    );
+  }
+  if (!members.length) return null;
 
   const message = (m: CareCircleMember) =>
     setLocation(

@@ -320,7 +320,10 @@ export interface NurseThread {
 const careCircleKey = (accessCode: string) => ["care-circle", accessCode];
 const nurseThreadsKey = (accessCode: string) => ["nurse-threads", accessCode];
 
-/** Who is in the patient's Care Circle now. `null` until the backend routes are deployed. */
+/**
+ * Who is in the patient's Care Circle now. `null` while the backend functions aren't deployed
+ * (the route answers 404/503); other failures keep the last list rather than blanking it.
+ */
 export function useCareCircle(accessCode: string): CareCircleMember[] | null {
   const query = useQuery({
     queryKey: careCircleKey(accessCode),
@@ -334,8 +337,9 @@ export function useCareCircle(accessCode: string): CareCircleMember[] | null {
           `/api/doctor/patient/${encodeURIComponent(accessCode)}/care-circle`,
         );
         return r.members ?? [];
-      } catch {
-        return null;
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 503)) return null;
+        throw e;
       }
     },
   });
