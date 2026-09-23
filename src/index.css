@@ -44,6 +44,19 @@
   --radius-lg: 0.75rem;
   --radius-md: 0.5rem;
   --radius-sm: 0.25rem;
+
+  /* `animate-fade-in`: tab switches, and live values (e.g. a new CGM reading) as they update. */
+  --animate-fade-in: fade-in 0.45s ease-out;
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 :root {

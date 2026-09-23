@@ -9,6 +9,7 @@ import { calculateDose, typicalCarbs, type DoseCalculation } from "@/lib/dose-ca
 import { RAPID_DIA_MIN, REGULAR_DIA_MIN, formatAgeShort } from "@/lib/app-dose/onBoard";
 import { INSULIN_TYPE_LABEL } from "@/lib/app-dose/insulin";
 import { formatTime } from "@/lib/utils";
+import { STATUS_META, formatAge, glucoseStatus, zonesFromSnapshot } from "@/lib/glucose-metrics";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const u = (n: number) => `${r2(n)}u`;
@@ -95,13 +96,39 @@ function howItWorks(c: DoseCalculation, meal: DoseCalculation | null): { title: 
   ];
 }
 
-function Term({ title, math, value, note }: { title: string; math: string; value: string; note?: string }) {
+/**
+ * One part of the formula: the live quantity itself (the reading, grams, units) big, where it came
+ * from, and — under the rule — what it does to the dose. The effect lines add up to the suggestion.
+ * `changeKey` changes whenever the underlying value does, replaying a fade so updates are noticed.
+ */
+function Term({
+  title,
+  value,
+  unit,
+  valueClass = "text-foreground",
+  detail,
+  effect,
+  changeKey,
+}: {
+  title: string;
+  value: ReactNode;
+  unit?: string;
+  valueClass?: string;
+  detail?: ReactNode;
+  effect: ReactNode;
+  changeKey: string;
+}) {
   return (
-    <div className="rounded-xl border border-border bg-secondary/30 p-3 min-w-0">
+    <div className="rounded-xl border border-border bg-secondary/30 p-3 min-w-0 flex flex-col">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className="text-xs text-muted-foreground mt-1">{math}</p>
-      <p className="text-lg font-display font-bold text-foreground leading-tight mt-0.5">{value}</p>
-      {note && <p className="text-[11px] text-muted-foreground mt-0.5">{note}</p>}
+      <p key={changeKey} className="mt-1 flex items-baseline gap-1 animate-fade-in">
+        <span className={`text-2xl font-display font-bold leading-tight ${valueClass}`}>{value}</span>
+        {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
+      </p>
+      {detail && <p className="text-[11px] text-muted-foreground mt-0.5">{detail}</p>}
+      <p className="text-[11px] text-foreground/85 mt-auto pt-2">
+        <span className="block border-t border-border/60 pt-1.5">{effect}</span>
+      </p>
     </div>
   );
 }
@@ -166,7 +193,7 @@ function NoteToParents({ detail, calc, onDone }: { detail: PatientDetail; calc: 
 export function DoseCalculationCard({ snapshot, detail }: { snapshot: PatientSnapshot; detail?: PatientDetail }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
+    const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
   const typical = useMemo(() => typicalCarbs(snapshot, now), [snapshot, now]);
@@ -185,6 +212,19 @@ export function DoseCalculationCard({ snapshot, detail }: { snapshot: PatientSna
   const warning = d.warnings[0];
   const dia = calc.insulin?.type === "regular" || calc.insulin?.type === "premixed" ? REGULAR_DIA_MIN : RAPID_DIA_MIN;
   const signed = (n: number, sign: "+" | "−") => `${sign}${u(n)}`;
+  const zones = zonesFromSnapshot(snapshot);
+  const bgMeta = STATUS_META[glucoseStatus(calc.bg.value, zones)];
+  const bgAgeMin = Math.max(0, Math.round((now - new Date(calc.bg.timestamp).getTime()) / 60_000));
+  const RECENT_MS = 6 * 3_600_000;
+  const newest = <T extends { timestamp: string }>(list: T[]) =>
+    list
+      .filter((x) => {
+        const t = new Date(x.timestamp).getTime();
+        return t <= now && now - t <= RECENT_MS;
+      })
+      .reduce<T | null>((a, b) => (!a || b.timestamp > a.timestamp ? b : a), null);
+  const lastDose = newest((snapshot.insulinLog ?? []).filter((l) => l.units > 0 && l.type !== "basal"));
+  const since = (ts: string) => formatAge(Math.max(0, Math.round((now - new Date(ts).getTime()) / 60_000)));
 
   return (
     <div>
@@ -207,30 +247,72 @@ export function DoseCalculationCard({ snapshot, detail }: { snapshot: PatientSna
       ) : (
         <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1.15fr]">
           <Term
-            title="Correct BG"
-            math={
-              d.correctionSuppressed
-                ? `${calc.bg.value} is at/below target ${calc.target}`
-                : `(${calc.bg.value} − ${calc.target}) ÷ ${s.correctionFactor}${Math.abs(d.trendAdjustment) >= 0.005 ? ` ${d.trendAdjustment > 0 ? "+" : "−"} ${r2(Math.abs(d.trendAdjustment))} trend` : ""}`
+            title="Current BG"
+            value={
+              <>
+                {calc.bg.value} <span className="text-lg">{calc.bg.trend.arrow}</span>
+              </>
             }
-            value={signed(p.correction, "+")}
-            note={p.held ? `${u(d.correctionHeldUnits)} on hold — recent dose` : undefined}
+            unit="mg/dL"
+            valueClass={bgMeta.text}
+            detail={`${formatTime(calc.bg.timestamp)} · ${formatAge(bgAgeMin)} · ${calc.bg.trend.label.toLowerCase()}`}
+            effect={
+              d.correctionSuppressed
+                ? `+0u — at or below the ${calc.target} target`
+                : p.held
+                  ? `+0u now — ${u(d.correctionHeldUnits)} correction on hold (recent dose)`
+                  : `${signed(p.correction, "+")} = (${calc.bg.value} − ${calc.target}) ÷ ${s.correctionFactor}${Math.abs(d.trendAdjustment) >= 0.005 ? ` ${d.trendAdjustment > 0 ? "+" : "−"} ${r2(Math.abs(d.trendAdjustment))} trend` : ""}`
+            }
+            changeKey={calc.bg.timestamp}
           />
           <Op>+</Op>
-          <Term title="Carb dose" math={`Carbs ÷ ${s.carbRatio}`} value={`1u / ${s.carbRatio} g`} note="Food is always covered in full" />
+          <Term
+            title="Carb dose"
+            value={`1u / ${s.carbRatio}`}
+            unit="g"
+            detail="For food being eaten"
+            effect={`+0u now — carbs ÷ ${s.carbRatio} once food is entered`}
+            changeKey={`${s.carbRatio}`}
+          />
           <Op>+</Op>
           <Term
             title="Active carbs"
-            math={calc.activeCarbs.totalGrams > 0 ? `${calc.activeCarbs.totalGrams} g still absorbing` : "Nothing absorbing"}
-            value={signed(p.activeCarbs, "+")}
-            note={calc.activeCarbs.totalGrams > 0 && p.activeCarbs <= 0.001 ? "Covered by insulin on board" : undefined}
+            value={calc.activeCarbs.totalGrams}
+            unit="g still absorbing"
+            detail={
+              calc.activeCarbs.totalGrams > 0
+                ? `${u(d.activeCarbInsulin)} worth at 1:${s.carbRatio}`
+                : "Nothing absorbing"
+            }
+            effect={
+              p.activeCarbs > 0.001
+                ? `${signed(p.activeCarbs, "+")} — more than the insulin on board covers`
+                : calc.activeCarbs.totalGrams > 0
+                  ? "+0u — covered by insulin on board"
+                  : "+0u"
+            }
+            changeKey={`${calc.activeCarbs.totalGrams}`}
           />
           <Op>−</Op>
           <Term
             title="Active insulin"
-            math={d.activeInsulinUnits > 0 ? `${u(d.activeInsulinUnits)} on board` : "None on board"}
-            value={signed(p.activeInsulin, "−")}
-            note={d.iobDiscounted ? "Half credited — glucose not falling" : undefined}
+            value={r2(d.activeInsulinUnits)}
+            unit="u still active"
+            detail={
+              lastDose
+                ? `Last dose ${lastDose.units}u · ${formatTime(lastDose.timestamp)} (${since(lastDose.timestamp)})`
+                : "No mealtime dose in the last 6 h"
+            }
+            effect={
+              p.held
+                ? "−0u — not credited while the correction is on hold"
+                : p.activeInsulin > 0.001
+                  ? `${signed(p.activeInsulin, "−")} off the correction${d.iobDiscounted ? " (half credited — glucose not falling)" : ""}`
+                  : d.activeInsulinUnits > 0
+                    ? "−0u — used up covering active carbs"
+                    : "−0u"
+            }
+            changeKey={lastDose?.id ?? "none"}
           />
           <Op>=</Op>
           <div className="rounded-xl border border-primary/30 bg-primary/10 p-3 min-w-0">
