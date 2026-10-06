@@ -1,6 +1,6 @@
 import { AlertTriangle, Clock, Phone, RefreshCw } from "lucide-react";
 import type { PatientSnapshot } from "@doctor-portal/api-client-react";
-import { formatDate, formatTime } from "@/lib/utils";
+import { formatDate, formatTime, parseDate } from "@/lib/utils";
 import { computeMetrics, formatAge, isToday, STATUS_META, TREND_LABEL } from "@/lib/glucose-metrics";
 import { PatientAvatar } from "@/components/PatientAvatar";
 import { CaregiverName } from "@/components/CaregiverName";
@@ -18,7 +18,7 @@ function typeLabel(t?: string): string {
 /** Age from a date-of-birth ISO string, in years (or months under a year). */
 function ageLabel(dob?: string): string | null {
   if (!dob) return null;
-  const d = new Date(dob);
+  const d = parseDate(dob);
   if (Number.isNaN(d.getTime())) return null;
   const now = new Date();
   let years = now.getFullYear() - d.getFullYear();

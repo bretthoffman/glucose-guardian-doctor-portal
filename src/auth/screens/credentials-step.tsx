@@ -334,6 +334,15 @@ export function CredentialsStep({
           </button>
         )}
       </div>
+
+      {mode === "signin" && (
+        <div className="mt-6 pt-5 border-t border-border/60 text-center">
+          <p className="text-xs text-muted-foreground mb-2">Just looking?</p>
+          <Button type="button" variant="outline" className="w-full" onClick={() => actions.startDemo()}>
+            Try the demo with sample patients
+          </Button>
+        </div>
+      )}
     </AuthShell>
   );
 }

@@ -22,6 +22,16 @@ export function setDoctorSessionRejectedHandler(handler: (() => void) | null): v
   onDoctorSessionRejected = handler;
 }
 
+/**
+ * When set, every request goes to this instead of the network (the portal's demo mode answers
+ * from sample data in the browser). Returning null falls through to the network.
+ */
+type RequestInterceptor = (url: string, init: RequestInit & { method: string }) => Promise<Response | null>;
+let requestInterceptor: RequestInterceptor | null = null;
+export function setRequestInterceptor(interceptor: RequestInterceptor | null): void {
+  requestInterceptor = interceptor;
+}
+
 const SIGN_IN_PATHS = ["/api/doctor/auth/login", "/api/doctor/login"];
 
 function isSignInRequest(url: string): boolean {
@@ -363,7 +373,9 @@ export async function customFetch<T = unknown>(
   const resolvedInput = resolveRequestInput(input);
   const requestInfo = { method, url: resolveUrl(resolvedInput) };
 
-  const response = await fetch(resolvedInput, { ...init, method, headers });
+  const response =
+    (requestInterceptor && (await requestInterceptor(requestInfo.url, { ...init, method, headers }))) ||
+    (await fetch(resolvedInput, { ...init, method, headers }));
 
   if (!response.ok) {
     // Only for the session still in use: a late reply to a request from a session that has since

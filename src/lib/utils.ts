@@ -25,8 +25,18 @@ export function formatTime(isoString: string) {
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * A date from the API. Date-only values (birthdays, lab dates: "2019-03-14") are calendar days, so
+ * they're read in local time — `new Date("2019-03-14")` is UTC midnight, which shows as the 13th
+ * anywhere west of Greenwich.
+ */
+export function parseDate(value: string): Date {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value);
+}
+
 export function formatDate(isoString: string) {
-  return new Date(isoString).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  return parseDate(isoString).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export function calculateA1C(readings: { value: number }[]) {

@@ -13,6 +13,8 @@ import { setDoctorSessionRejectedHandler, type DoctorProfile } from "@doctor-por
 import { mockOrganizations, type MockOrganization } from "@/data/mock";
 import { toast } from "@/hooks/use-toast";
 import { clearDoctorSession, loadDoctorSession, storeDoctorSession } from "./doctor-auth";
+import { DEMO_DOCTOR } from "@/demo/people";
+import { resumeDemo, startDemo, stopDemo } from "@/demo/demo-mode";
 import { hashPin, setAccountPin, verifyAccountPin } from "./pin-backend";
 
 /**
@@ -40,6 +42,8 @@ interface SessionState {
   doctor?: DoctorProfile;
   /** When the server session ends (epoch ms, from sign-in). */
   expiresAt?: number;
+  /** Signed in to the demo (sample patients, answered in the browser; see src/demo). */
+  demo?: boolean;
   locked: boolean;
   attempts: number;
 }
@@ -54,6 +58,8 @@ export interface SessionActions {
   lock: () => void;
   unlock: (pin: string) => Promise<boolean>;
   signOut: () => void;
+  /** Open the demo: sample patients, no account. Leaving it is `signOut`. */
+  startDemo: () => void;
 }
 
 export interface MockSessionValue {
@@ -62,6 +68,8 @@ export interface MockSessionValue {
   doctor?: DoctorProfile;
   canLock: boolean;
   attemptsLeft: number;
+  /** In the demo (sample data, nothing real). */
+  demo: boolean;
   actions: SessionActions;
 }
 
@@ -86,6 +94,18 @@ function pinIsSet(s: SessionState): boolean {
 function loadState(): SessionState {
   const device = readJSON(localStorage, DEVICE_KEY);
   const flags = readJSON(sessionStorage, FLAGS_KEY);
+  if (resumeDemo()) {
+    return {
+      orgId: device.orgId as string | undefined,
+      orgName: device.orgName as string | undefined,
+      orgDomains: Array.isArray(device.orgDomains) ? (device.orgDomains as string[]) : undefined,
+      pinHash: device.pinHash as string | undefined,
+      doctor: DEMO_DOCTOR,
+      demo: true,
+      locked: false,
+      attempts: 0,
+    };
+  }
   const session = loadDoctorSession();
   const flagHasPin =
     typeof flags.accountHasPin === "boolean" ? (flags.accountHasPin as boolean) : undefined;
@@ -125,6 +145,7 @@ function persist(s: SessionState): void {
 function deriveStep(s: SessionState): SessionStep {
   // Sign-in comes first; the org is picked inside the create-account path, not as a gate.
   if (!s.doctor) return "authenticate";
+  if (s.demo) return "ready";
   if (s.locked && pinIsSet(s)) return "locked";
   // A 4-digit PIN is required — no skip. An account without one (new account, or a returning
   // doctor whose device-only PIN predates account PINs) is sent here to set one.
@@ -141,6 +162,7 @@ function signedOut(prev: SessionState): SessionState {
     ...prev,
     doctor: undefined,
     expiresAt: undefined,
+    demo: false,
     pinHash: undefined,
     accountHasPin: undefined,
     locked: false,
@@ -173,6 +195,7 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
   const lock = useCallback(() => setState((prev) => ({ ...prev, locked: true })), []);
 
   const signOut = useCallback(() => {
+    if (stateRef.current.demo) stopDemo();
     clearDoctorSession();
     setState(signedOut);
   }, []);
@@ -253,11 +276,24 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
         return false;
       },
       signOut,
+      startDemo: () => {
+        clearDoctorSession();
+        startDemo();
+        setState((prev) => ({
+          ...prev,
+          doctor: DEMO_DOCTOR,
+          demo: true,
+          expiresAt: undefined,
+          locked: false,
+          attempts: 0,
+        }));
+      },
     }),
     [update, lock, signOut],
   );
 
-  const canLock = pinIsSet(state) && Boolean(state.doctor);
+  // The demo has no PIN to unlock with, so it never locks.
+  const canLock = !state.demo && pinIsSet(state) && Boolean(state.doctor);
 
   useEffect(() => {
     if (!canLock) return;
@@ -314,7 +350,10 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
     // Prefer the org identity captured at pick time (covers server-directory orgs that aren't in
     // the bundled list); fall back to the curated list for devices stored before orgName existed.
     const fromList = mockOrganizations().find((o) => o.id === state.orgId);
-    const org: MockOrganization | undefined = state.orgId
+    // The demo always shows its sample clinic, never this device's organization.
+    const org: MockOrganization | undefined = state.demo
+      ? { id: "demo-clinic", name: DEMO_DOCTOR.institution, slug: "demo-clinic", allowedDomains: [] }
+      : state.orgId
       ? (fromList ??
         (state.orgName
           ? {
@@ -331,11 +370,17 @@ export function DoctorSessionProvider({ children }: { children: ReactNode }) {
       doctor: state.doctor,
       canLock,
       attemptsLeft: MAX_ATTEMPTS - state.attempts,
+      demo: Boolean(state.demo),
       actions,
     };
   }, [state, canLock, actions]);
 
   return <MockSessionContext.Provider value={value}>{children}</MockSessionContext.Provider>;
+}
+
+/** Whether the portal is showing the demo (sample patients). False outside the session provider. */
+export function useIsDemo(): boolean {
+  return useContext(MockSessionContext)?.demo ?? false;
 }
 
 export function useDoctorSession(): MockSessionValue {

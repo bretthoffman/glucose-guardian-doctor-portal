@@ -15,6 +15,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useSession } from "@/auth/use-session";
+import { useIsDemo } from "@/auth/mock-session";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -194,6 +195,7 @@ function PatientCard({
 export function PatientList() {
   const [, setLocation] = useLocation();
   const { signOut, lock, canLock } = useSession();
+  const demo = useIsDemo();
   const access = useCurrentDoctor();
   const doctor = access.status === "active" ? access.doctor : undefined;
   const org = access.status === "active" ? access.organization : undefined;
@@ -308,6 +310,14 @@ export function PatientList() {
           onOpen={(code) => setLocation(`/patient/${code}/overview`)}
         />
 
+        {demo ? (
+          <Card>
+            <CardContent className="p-5 text-sm text-muted-foreground">
+              These sample patients are already linked. In the real portal, you add a patient by entering
+              the Doctor Code their family shares from the Glucose Guardian app.
+            </CardContent>
+          </Card>
+        ) : (
         <Card>
           <CardContent className="p-5">
             <form onSubmit={handleLink} className="flex flex-col sm:flex-row gap-3 sm:items-end">
@@ -330,6 +340,7 @@ export function PatientList() {
             {linkMsg && <p className="text-sm text-muted-foreground mt-3">{linkMsg}</p>}
           </CardContent>
         </Card>
+        )}
 
         {patients.length > 0 && (
           <div className="relative">
