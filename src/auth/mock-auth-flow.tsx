@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDoctorSession } from "./mock-session";
 import { OrgPicker } from "./screens/org-picker";
-import { CredentialsStep } from "./screens/credentials-step";
+import { CredentialsStep, inviteFromUrl } from "./screens/credentials-step";
 import { SetPinStep } from "./screens/set-pin-step";
 import { PinLock } from "./screens/pin-lock";
 
@@ -17,7 +17,7 @@ import { PinLock } from "./screens/pin-lock";
  */
 export function MockAuthFlow({ children }: { children: ReactNode }) {
   const { step } = useDoctorSession();
-  const [signup, setSignup] = useState<"none" | "org" | "form">("none");
+  const [signup, setSignup] = useState<"none" | "org" | "form">(() => (inviteFromUrl() ? "org" : "none"));
 
   // Leaving the authenticate step (successful sign-in/up, or sign-out later) resets the sub-flow.
   useEffect(() => {

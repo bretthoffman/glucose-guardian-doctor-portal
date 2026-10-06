@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { ArrowRight, Building2, Eye, EyeOff, ShieldAlert } from "lucide-react";
-import { useDoctorAuthLogin, useDoctorAuthRegister } from "@doctor-portal/api-client-react";
+import {
+  ApiError,
+  useDoctorAuthLogin,
+  useDoctorAuthRegister,
+  type DoctorRegisterRequest,
+} from "@doctor-portal/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +21,34 @@ import { hashPassword } from "../password";
 import { AuthShell } from "./auth-shell";
 
 const NO_TITLE = "none";
+/** New passwords guard patient records, so they're held to a longer minimum. */
+const MIN_NEW_PASSWORD = 10;
+
+/** An invite link (`?invite=CODE`) fills in the code. */
+export function inviteFromUrl(): string {
+  try {
+    return new URLSearchParams(window.location.search).get("invite")?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** What to tell the doctor when sign-in or sign-up is refused. */
+function authErrorMessage(e: unknown, mode: "create" | "signin"): string {
+  const status = e instanceof ApiError ? e.status : 0;
+  const serverMessage =
+    e instanceof ApiError ? (e.data as { error?: string } | null)?.error : undefined;
+  if (status === 429) return serverMessage ?? "Too many attempts. Try again in a few minutes.";
+  if (mode === "signin") {
+    return status === 401 ? "Invalid email or password." : "Couldn't sign in right now. Please try again.";
+  }
+  if (status === 403) {
+    return "That invite code isn't valid for this email, or it has expired or already been used. Ask for a new invite.";
+  }
+  if (status === 409) return "An account with this email already exists. Sign in instead.";
+  if (status === 503) return "Sign-up isn't available right now. Please try again later.";
+  return "Couldn't create your account. Please try again.";
+}
 // Honorific shown to patients as "<title> <last name>" on treatment proposals (e.g. "Dr. Rivera").
 const TITLE_OPTIONS = ["Dr.", "NP", "PA", "RN", "PharmD"] as const;
 
@@ -40,6 +73,7 @@ export function CredentialsStep({
   const { org, actions } = useDoctorSession();
   const register = useDoctorAuthRegister();
   const login = useDoctorAuthLogin();
+  const [inviteCode, setInviteCode] = useState(inviteFromUrl);
   const [title, setTitle] = useState("Dr.");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -58,11 +92,19 @@ export function CredentialsStep({
       setErr("Enter your work email.");
       return;
     }
-    if (password.length < 6) {
-      setErr("Password must be at least 6 characters.");
+    if (!password) {
+      setErr("Enter your password.");
       return;
     }
     if (mode === "create") {
+      if (!inviteCode.trim()) {
+        setErr("Enter the invite code you were sent.");
+        return;
+      }
+      if (password.length < MIN_NEW_PASSWORD) {
+        setErr(`Use at least ${MIN_NEW_PASSWORD} characters for your password.`);
+        return;
+      }
       if (!firstName.trim() || !lastName.trim()) {
         setErr("Enter your first and last name.");
         return;
@@ -82,17 +124,17 @@ export function CredentialsStep({
     setSubmitting(true);
     try {
       if (mode === "create") {
-        await register.mutateAsync({
-          data: {
-            email: at,
-            passwordHash,
-            displayName,
-            title: titleOut || undefined,
-            firstName: first,
-            lastName: last,
-            institution: org?.name,
-          },
-        });
+        const data: DoctorRegisterRequest & { inviteCode: string } = {
+          inviteCode: inviteCode.trim(),
+          email: at,
+          passwordHash,
+          displayName,
+          title: titleOut || undefined,
+          firstName: first,
+          lastName: last,
+          institution: org?.name,
+        };
+        await register.mutateAsync({ data });
         // Brand-new account: queue the one-time guided tour (sign-ins never auto-run it).
         try {
           sessionStorage.setItem("gg_tour_pending", "1");
@@ -102,12 +144,8 @@ export function CredentialsStep({
       }
       const res = await login.mutateAsync({ data: { email: at, passwordHash } });
       actions.authenticate(res.doctor, res.token, res.expiresAt);
-    } catch {
-      setErr(
-        mode === "create"
-          ? "Couldn't create your account — that email may already be registered."
-          : "Invalid email or password.",
-      );
+    } catch (e) {
+      setErr(authErrorMessage(e, mode));
     } finally {
       setSubmitting(false);
     }
@@ -127,6 +165,25 @@ export function CredentialsStep({
       }
     >
       <form onSubmit={submit} className="space-y-4">
+        {mode === "create" && (
+          <div>
+            <Label htmlFor="inviteCode">Invite code</Label>
+            <Input
+              id="inviteCode"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              placeholder="XXXX-XXXX-XXXX"
+              className="mt-1.5 font-mono tracking-wider"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Accounts are by invitation. Use the code sent to your work email; it only works for
+              that address.
+            </p>
+          </div>
+        )}
+
         {mode === "create" && (
           <div className="grid grid-cols-[5.5rem_1fr] gap-3">
             <div>

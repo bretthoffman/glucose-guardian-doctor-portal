@@ -723,10 +723,16 @@ export function useLinkPatient(): {
         // Auto-links by the patient's Doctor Code — the code itself is the consent.
         return await link.mutateAsync({ data: { accessCode: code } });
       } catch (e) {
-        const err =
-          e instanceof Error
-            ? new Error("That code isn't valid, or your session expired. Check the Doctor Code.")
-            : new Error("Could not link patient.");
+        const status = e instanceof ApiError ? e.status : 0;
+        const serverMessage =
+          e instanceof ApiError ? (e.data as { error?: string } | null)?.error : undefined;
+        const err = new Error(
+          status === 429
+            ? (serverMessage ?? "Too many attempts to add a patient. Try again later.")
+            : status === 404
+              ? "That Doctor Code isn't valid. Check it with the patient's family."
+              : "Could not add the patient. Please try again.",
+        );
         setError(err);
         throw err;
       } finally {
