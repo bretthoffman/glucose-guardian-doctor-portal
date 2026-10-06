@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { FlaskConical } from "lucide-react";
 import { useLocation } from "wouter";
 import { useDoctorSession } from "@/auth/mock-session";
@@ -34,17 +33,4 @@ export function DemoBanner() {
       </button>
     </div>
   );
-}
-
-/** `/demo` — a link straight into the demo (kept off if a doctor is signed in for real). */
-export function DemoRoute() {
-  const { demo, doctor, actions } = useDoctorSession();
-  const [, navigate] = useLocation();
-  useEffect(() => {
-    if (!doctor && !demo) actions.startDemo();
-    navigate("/", { replace: true });
-    // Once, on arrival.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return null;
 }

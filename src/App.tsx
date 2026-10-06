@@ -7,7 +7,7 @@ import { PatientDetail } from "@/pages/patient-detail";
 import NotFound from "@/pages/not-found";
 import { AuthGate } from "@/auth/auth-gate";
 import { DoctorSessionProvider } from "@/auth/mock-session";
-import { DemoBanner, DemoRoute } from "@/demo/DemoUi";
+import { DemoBanner } from "@/demo/DemoUi";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,8 +36,9 @@ function Router() {
       <Route path="/patient/:accessCode">
         {(params) => <Redirect to={`/patient/${params.accessCode ?? ""}/overview`} />}
       </Route>
+      {/* A shared demo link opens the home page; visitors choose "Try the demo" there. */}
       <Route path="/demo">
-        <DemoRoute />
+        <Redirect to="/" />
       </Route>
       {/* Legacy / retired routes send the doctor home (the auth flow gates from there). */}
       <Route path="/login">
