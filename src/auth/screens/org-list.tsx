@@ -31,8 +31,8 @@ export function OrgList({ onSelect }: { onSelect: (org: MockOrganization) => voi
           Start typing your facility's name to search.
         </p>
       ) : results.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No matches for &ldquo;{query}&rdquo;. Try the full facility name.
+        <p className="text-sm text-muted-foreground text-center py-6">
+          No matches for &ldquo;{query}&rdquo;. Try the full facility name, or continue with it as typed.
         </p>
       ) : (
         <div className="space-y-2">
@@ -60,6 +60,21 @@ export function OrgList({ onSelect }: { onSelect: (org: MockOrganization) => voi
             );
           })}
         </div>
+      )}
+
+      {/* The directory isn't exhaustive, and the invite (not this list) is what grants access —
+          so an unlisted facility can be entered as typed. */}
+      {query.length >= 2 && (
+        <button
+          type="button"
+          onClick={() => {
+            const slug = query.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            onSelect({ id: `custom:${slug}`, name: query, slug, allowedDomains: [] });
+          }}
+          className="mt-3 w-full text-sm text-primary hover:underline text-center"
+        >
+          My organization isn&rsquo;t listed: continue with &ldquo;{query}&rdquo;
+        </button>
       )}
     </>
   );
