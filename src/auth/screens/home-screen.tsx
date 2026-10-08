@@ -7,6 +7,16 @@ import { useDoctorSession } from "../mock-session";
 import { describeAccessCode, inviteFromUrl, type Access } from "../access-code";
 import { AuthShell } from "./auth-shell";
 
+/** Keys are 4 groups of 4 (invites 3 groups); longer input is cut off. */
+const GROUP = 4;
+const MAX_CHARS = 16;
+
+/** Uppercase, drop anything but letters and digits, and put a dash between every group of 4. */
+export function formatAccessCode(raw: string): string {
+  const chars = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, MAX_CHARS);
+  return chars.match(new RegExp(`.{1,${GROUP}}`, "g"))?.join("-") ?? "";
+}
+
 /**
  * The front door: enter a license key (or invite code) to create an account, try the demo, or
  * go to sign-in.
@@ -19,7 +29,7 @@ export function HomeScreen({
   onSignIn: () => void;
 }) {
   const { actions } = useDoctorSession();
-  const [code, setCode] = useState(inviteFromUrl);
+  const [code, setCode] = useState(() => formatAccessCode(inviteFromUrl()));
   const [err, setErr] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -47,7 +57,7 @@ export function HomeScreen({
           <Input
             id="accessCode"
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onChange={(e) => setCode(formatAccessCode(e.target.value))}
             placeholder="XXXX-XXXX-XXXX-XXXX"
             className="mt-1.5 h-12 font-mono tracking-wider text-base"
             autoComplete="off"
