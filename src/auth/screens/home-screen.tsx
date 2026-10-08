@@ -48,7 +48,9 @@ export function HomeScreen({
   }
 
   return (
-    <AuthShell title="Glucose Guardian for clinicians" subtitle="Your patients' glucose, insulin and meals in one place.">
+    <AuthShell
+      logoClassName="w-36 h-36 sm:w-44 sm:h-44"
+      title="Glucose Guardian for clinicians" subtitle="Your patients' glucose, insulin and meals in one place.">
       <form onSubmit={submit} className="space-y-4">
         <div>
           <Label htmlFor="accessCode" className="flex items-center gap-2">
