@@ -101,7 +101,7 @@ function Ring({ pct }: { pct: number }) {
   const tone = pct >= 70 ? "#10B981" : pct >= 50 ? "#F59E0B" : "#EF4444";
   return (
     <svg width="46" height="46" viewBox="0 0 46 46" className="shrink-0">
-      <circle cx="23" cy="23" r={r} fill="none" stroke="hsl(215 25% 27%)" strokeWidth="5" />
+      <circle cx="23" cy="23" r={r} fill="none" stroke="var(--color-border)" strokeWidth="5" />
       <circle
         cx="23"
         cy="23"
@@ -347,7 +347,7 @@ export function OverviewPanel({
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-5">
               <QuickStat label="Average" value={m.average != null ? `${m.average}` : "--"} />
               <QuickStat label="Highest" value={m.highest != null ? `${m.highest}` : "--"} accent="text-warning" />
-              <QuickStat label="Lowest" value={m.lowest != null ? `${m.lowest}` : "--"} accent="text-orange-500" />
+              <QuickStat label="Lowest" value={m.lowest != null ? `${m.lowest}` : "--"} accent="text-orange-600 dark:text-orange-500" />
               <QuickStat
                 label="Variability"
                 value={m.variability}
@@ -577,7 +577,7 @@ export function OverviewPanel({
                       type="checkbox"
                       checked={!!visible[w.id]}
                       onChange={() => toggle(w.id)}
-                      className="accent-[hsl(217_91%_60%)] w-4 h-4"
+                      className="accent-primary w-4 h-4"
                     />
                     {w.label}
                   </label>

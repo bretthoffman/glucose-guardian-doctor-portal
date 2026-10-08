@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { ThemeToggle } from "@/lib/theme";
 
 export function AuthShell({
   title,
@@ -25,6 +26,7 @@ export function AuthShell({
         />
         <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/95 to-background" />
       </div>
+      <ThemeToggle className="absolute top-4 right-4 z-20" />
       <div className={`w-full ${width} p-6 relative z-10`}>
         <div className="text-center mb-6">
           <BrandLogo className="w-20 h-20 mx-auto mb-3" />

@@ -72,15 +72,15 @@ export function GlucoseChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 12, right: 12, left: -6, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(215 25% 27%)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
         <ReferenceArea y1={zones.urgentHigh} y2={yMax} fill={STATUS_META.urgentHigh.hex} fillOpacity={0.1} />
         <ReferenceArea y1={zones.high} y2={zones.urgentHigh} fill={STATUS_META.high.hex} fillOpacity={0.1} />
         <ReferenceArea y1={zones.low} y2={zones.high} fill={STATUS_META.target.hex} fillOpacity={0.14} />
         <ReferenceArea y1={zones.urgentLow} y2={zones.low} fill={STATUS_META.low.hex} fillOpacity={0.12} />
         <ReferenceArea y1={40} y2={zones.urgentLow} fill={STATUS_META.urgentLow.hex} fillOpacity={0.1} />
-        <XAxis dataKey="t" stroke="hsl(215 16% 65%)" fontSize={11} tickMargin={8} minTickGap={56} />
+        <XAxis dataKey="t" stroke="var(--color-muted-foreground)" fontSize={11} tickMargin={8} minTickGap={56} />
         <YAxis
-          stroke="hsl(215 16% 65%)"
+          stroke="var(--color-muted-foreground)"
           fontSize={11}
           tickMargin={6}
           domain={[40, yMax]}
@@ -93,10 +93,10 @@ export function GlucoseChart({
         <Line
           type="monotone"
           dataKey="value"
-          stroke="hsl(217 91% 60%)"
+          stroke="var(--color-primary)"
           strokeWidth={2.5}
           dot={false}
-          activeDot={{ r: 5, fill: "hsl(217 91% 60%)", stroke: "hsl(222 47% 11%)", strokeWidth: 2 }}
+          activeDot={{ r: 5, fill: "var(--color-primary)", stroke: "var(--color-card)", strokeWidth: 2 }}
         />
       </ComposedChart>
     </ResponsiveContainer>

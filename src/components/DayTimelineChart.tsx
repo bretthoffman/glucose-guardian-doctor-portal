@@ -17,7 +17,7 @@ import type { DayMarker } from "@/lib/day-review";
 const MARKER_COLOR: Record<DayMarker["kind"], string> = {
   meal: STATUS_META.target.hex,
   correction: "#A855F7",
-  insulin: "hsl(217 91% 60%)",
+  insulin: "var(--color-primary)",
 };
 
 function formatHourTick(ts: number): string {
@@ -122,7 +122,7 @@ export function DayTimelineChart({
                 strokeOpacity={0.55}
               />
               <circle cx={x} cy={bottom} r={3} fill={color} />
-              <text x={x} y={bottom + 16} textAnchor="middle" fontSize={10} fill="hsl(215 16% 65%)">
+              <text x={x} y={bottom + 16} textAnchor="middle" fontSize={10} fill="var(--color-muted-foreground)">
                 {formatClock(m.ts)}
               </text>
               {m.carbs != null && (
@@ -162,7 +162,7 @@ export function DayTimelineChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 10, right: 16, left: -4, bottom: 52 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(215 25% 27%)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
         <ReferenceArea y1={zones.low} y2={zones.high} fill={STATUS_META.target.hex} fillOpacity={0.12} />
         <XAxis
           type="number"
@@ -170,14 +170,14 @@ export function DayTimelineChart({
           domain={domain}
           ticks={xTicks}
           tickFormatter={formatHourTick}
-          stroke="hsl(215 16% 65%)"
+          stroke="var(--color-muted-foreground)"
           fontSize={11}
           tickMargin={8}
         />
         <YAxis
           domain={[40, yMax]}
           ticks={yTicks}
-          stroke="hsl(215 16% 65%)"
+          stroke="var(--color-muted-foreground)"
           fontSize={11}
           tickMargin={6}
           width={40}
@@ -188,10 +188,10 @@ export function DayTimelineChart({
         <Line
           type="monotone"
           dataKey="value"
-          stroke="hsl(217 91% 60%)"
+          stroke="var(--color-primary)"
           strokeWidth={2.5}
           dot={false}
-          activeDot={{ r: 5, fill: "hsl(217 91% 60%)", stroke: "hsl(222 47% 11%)", strokeWidth: 2 }}
+          activeDot={{ r: 5, fill: "var(--color-primary)", stroke: "var(--color-card)", strokeWidth: 2 }}
           isAnimationActive={false}
         />
         <Customized component={renderMarkers} />

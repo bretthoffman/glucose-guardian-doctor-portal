@@ -55,7 +55,7 @@ function parseDisplayName(displayName?: string): {
   const lastName = tokens.length > 1 ? tokens[tokens.length - 1] : "";
   return { title, firstName, lastName };
 }
-const SPECIALTY_SUGGESTIONS = [
+export const SPECIALTY_SUGGESTIONS = [
   "Endocrinology",
   "Pediatric Endocrinology",
   "Pediatrics",

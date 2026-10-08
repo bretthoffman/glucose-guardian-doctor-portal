@@ -12,7 +12,7 @@ export function OrgPicker({ onPicked, onBack }: { onPicked: () => void; onBack: 
   return (
     <AuthShell
       title="Find your organization"
-      subtitle="Search for where you work to create your account."
+      subtitle="Next, search for where you work."
     >
       <OrgList
         onSelect={(org) => {
@@ -25,7 +25,7 @@ export function OrgPicker({ onPicked, onBack }: { onPicked: () => void; onBack: 
           onClick={onBack}
           className="text-muted-foreground hover:text-foreground flex items-center gap-1"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
       </div>
     </AuthShell>

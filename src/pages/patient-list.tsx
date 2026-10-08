@@ -32,6 +32,7 @@ import {
 import { readDecision, isDecisionUnseen } from "@/data/notifications";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
+import { ThemeToggle } from "@/lib/theme";
 import { AttentionStrip } from "@/components/AttentionStrip";
 import { BrandLogo } from "@/components/BrandLogo";
 import type { DoctorLinkedPatient } from "@doctor-portal/api-client-react";
@@ -259,7 +260,10 @@ export function PatientList() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <DoctorAlertsBell />
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <DoctorAlertsBell />
+            </div>
             {doctor && (
               <button
                 onClick={() => setProfileOpen(true)}

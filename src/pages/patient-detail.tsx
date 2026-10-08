@@ -34,6 +34,7 @@ import { MessagesPanel } from "@/components/panels/MessagesPanel";
 import { NotificationsPanel } from "@/components/panels/NotificationsPanel";
 import { DoctorProfileDialog } from "@/components/DoctorProfileDialog";
 import { DoctorAlertsBell } from "@/components/DoctorAlertsBell";
+import { ThemeToggle } from "@/lib/theme";
 import { AssistantWidget } from "@/components/AssistantWidget";
 import { CaregiverTitlesProvider } from "@/components/CaregiverName";
 import { CareCircleSidebar } from "@/components/CareCircleSidebar";
@@ -331,6 +332,7 @@ export function PatientDetail({ accessCode, tab }: { accessCode: string; tab: st
                   {doctor.specialty || doctor.email}
                 </p>
               </div>
+              <ThemeToggle className="p-1.5 shrink-0" />
               <DoctorAlertsBell />
               <button
                 onClick={() => setProfileOpen(true)}

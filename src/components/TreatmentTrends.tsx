@@ -669,7 +669,7 @@ export function TreatmentTrends({
               <p className="text-sm font-semibold text-foreground mb-2">Glucose Trend Comparison</p>
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={overlay.rows} margin={{ top: 8, right: 12, left: -6, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(215 25% 27%)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
                   <ReferenceArea
                     y1={zones.low}
                     y2={zones.high}
@@ -686,12 +686,12 @@ export function TreatmentTrends({
                     tickFormatter={(i: number) =>
                       shortDate(currentWin.fromMs + i * ((currentWin.toMs - currentWin.fromMs) / overlay.rows.length))
                     }
-                    stroke="hsl(215 16% 65%)"
+                    stroke="var(--color-muted-foreground)"
                     fontSize={11}
                     tickMargin={8}
                   />
                   <YAxis
-                    stroke="hsl(215 16% 65%)"
+                    stroke="var(--color-muted-foreground)"
                     fontSize={11}
                     tickMargin={6}
                     domain={[40, yMax]}

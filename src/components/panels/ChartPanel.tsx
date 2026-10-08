@@ -72,7 +72,7 @@ function Ring({ pct }: { pct: number }) {
   const tone = pct >= 80 ? "#10B981" : pct >= 50 ? "#F59E0B" : "#EF4444";
   return (
     <svg width="76" height="76" viewBox="0 0 76 76" className="shrink-0">
-      <circle cx="38" cy="38" r={r} fill="none" stroke="hsl(215 25% 27%)" strokeWidth="6" />
+      <circle cx="38" cy="38" r={r} fill="none" stroke="var(--color-border)" strokeWidth="6" />
       <circle
         cx="38"
         cy="38"
@@ -170,19 +170,19 @@ function TrendCard({
               dataKey="label"
               tickLine={false}
               axisLine={false}
-              stroke="hsl(215 16% 65%)"
+              stroke="var(--color-muted-foreground)"
               fontSize={11}
               tickMargin={8}
             />
             <Line
               type="monotone"
               dataKey="value"
-              stroke="hsl(217 91% 60%)"
+              stroke="var(--color-primary)"
               strokeWidth={2}
-              dot={{ r: 4, fill: "hsl(217 91% 60%)" }}
+              dot={{ r: 4, fill: "var(--color-primary)" }}
               isAnimationActive={false}
             >
-              <LabelList dataKey="display" position="top" fontSize={12} fill="hsl(215 16% 75%)" />
+              <LabelList dataKey="display" position="top" fontSize={12} fill="var(--color-muted-foreground)" />
             </Line>
           </LineChart>
         </ResponsiveContainer>
@@ -456,10 +456,10 @@ export function ChartPanel({
             <GlucoseTrendChart readings={readings} zones={zones} domain={domain} height={380} />
             <div className="flex items-center gap-6 mt-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="w-5 h-0.5 rounded bg-[hsl(217_91%_60%)]" /> Glucose (mg/dL)
+                <span className="w-5 h-0.5 rounded bg-primary" /> Glucose (mg/dL)
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-5 border-t-2 border-dashed border-[#93C5FD]" /> Average Glucose
+                <span className="w-5 border-t-2 border-dashed border-[var(--chart-avg)]" /> Average Glucose
               </span>
             </div>
           </div>

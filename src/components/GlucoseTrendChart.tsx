@@ -130,7 +130,7 @@ export function GlucoseTrendChart({
           const y = scale((b.y1 + b.y2) / 2);
           return (
             <g key={b.label}>
-              <text x={x} y={y - 4} fontSize={11} fill="hsl(215 16% 65%)">
+              <text x={x} y={y - 4} fontSize={11} fill="var(--color-muted-foreground)">
                 {b.range}
               </text>
               <text x={x} y={y + 9} fontSize={11} fontWeight={600} fill={b.hex}>
@@ -157,7 +157,7 @@ export function GlucoseTrendChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 10, right: 92, left: -4, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(215 25% 27%)" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
         {bands.map((b) => (
           <ReferenceArea key={b.label} y1={b.y1} y2={b.y2} fill={b.hex} fillOpacity={b.op} />
         ))}
@@ -167,14 +167,14 @@ export function GlucoseTrendChart({
           domain={domain}
           ticks={xTicks}
           tickFormatter={formatDateTick}
-          stroke="hsl(215 16% 65%)"
+          stroke="var(--color-muted-foreground)"
           fontSize={11}
           tickMargin={8}
         />
         <YAxis
           domain={[40, yMax]}
           ticks={[40, 100, 200, 300, yMax >= 400 ? 400 : yMax]}
-          stroke="hsl(215 16% 65%)"
+          stroke="var(--color-muted-foreground)"
           fontSize={11}
           tickMargin={6}
           width={40}
@@ -184,7 +184,7 @@ export function GlucoseTrendChart({
           type="monotone"
           dataKey="value"
           name="Glucose (mg/dL)"
-          stroke="hsl(217 91% 60%)"
+          stroke="var(--color-primary)"
           strokeWidth={2}
           dot={false}
           isAnimationActive={false}
@@ -193,7 +193,7 @@ export function GlucoseTrendChart({
           type="monotone"
           dataKey="avg"
           name="Average Glucose"
-          stroke="#93C5FD"
+          stroke="var(--chart-avg)"
           strokeWidth={1.5}
           strokeDasharray="6 5"
           dot={false}

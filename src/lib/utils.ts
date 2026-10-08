@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getGlucoseColor(value: number) {
   if (value < 55) return "text-destructive border-destructive/30 bg-destructive/10";
-  if (value < 70) return "text-orange-500 border-orange-500/30 bg-orange-500/10";
+  if (value < 70) return "text-orange-600 dark:text-orange-500 border-orange-500/30 bg-orange-500/10";
   if (value <= 180) return "text-success border-success/30 bg-success/10";
   if (value <= 250) return "text-warning border-warning/30 bg-warning/10";
   return "text-destructive border-destructive/30 bg-destructive/10";

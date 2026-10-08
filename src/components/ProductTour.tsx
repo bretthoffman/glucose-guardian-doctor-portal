@@ -148,7 +148,7 @@ export function ProductTour({
           className="absolute rounded-xl transition-all duration-200 pointer-events-none"
           style={{
             ...spot,
-            boxShadow: "0 0 0 2px hsl(217 91% 60%), 0 0 0 9999px rgba(2,6,23,0.72)",
+            boxShadow: "0 0 0 2px var(--color-primary), 0 0 0 9999px rgba(2,6,23,0.72)",
           }}
         />
       ) : (

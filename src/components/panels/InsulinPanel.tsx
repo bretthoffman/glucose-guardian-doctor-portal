@@ -60,16 +60,16 @@ const RANGES = [
 ];
 
 const SLOT_META: Record<MealSlot, { Icon: typeof Sun; color: string; ring: string }> = {
-  breakfast: { Icon: Sunrise, color: "text-amber-400", ring: "border-amber-400/30 bg-amber-400/10" },
-  lunch: { Icon: Sun, color: "text-orange-400", ring: "border-orange-400/30 bg-orange-400/10" },
-  dinner: { Icon: Sunset, color: "text-rose-400", ring: "border-rose-400/30 bg-rose-400/10" },
-  snack: { Icon: Cookie, color: "text-purple-400", ring: "border-purple-400/30 bg-purple-400/10" },
+  breakfast: { Icon: Sunrise, color: "text-amber-600 dark:text-amber-400", ring: "border-amber-400/30 bg-amber-400/10" },
+  lunch: { Icon: Sun, color: "text-orange-600 dark:text-orange-400", ring: "border-orange-400/30 bg-orange-400/10" },
+  dinner: { Icon: Sunset, color: "text-rose-600 dark:text-rose-400", ring: "border-rose-400/30 bg-rose-400/10" },
+  snack: { Icon: Cookie, color: "text-purple-600 dark:text-purple-400", ring: "border-purple-400/30 bg-purple-400/10" },
 };
 
 const DOSE_BADGE: Record<DoseType, { label: string; cls: string }> = {
   bolus: { label: "Bolus", cls: "bg-primary/15 text-primary border-primary/30" },
-  correction: { label: "Correction", cls: "bg-purple-500/15 text-purple-300 border-purple-500/30" },
-  basal: { label: "Basal", cls: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+  correction: { label: "Correction", cls: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30" },
+  basal: { label: "Basal", cls: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30" },
   manual: { label: "Manual", cls: "bg-secondary text-muted-foreground border-border" },
 };
 
@@ -194,7 +194,7 @@ function RailCard({
 
 function DirectionIcon({ d }: { d: DayMeal["direction"] }) {
   if (d === "up") return <TrendingUp className="w-3.5 h-3.5 text-warning" />;
-  if (d === "down") return <TrendingDown className="w-3.5 h-3.5 text-orange-500" />;
+  if (d === "down") return <TrendingDown className="w-3.5 h-3.5 text-orange-600 dark:text-orange-500" />;
   if (d === "stable") return <Minus className="w-3.5 h-3.5 text-success" />;
   return null;
 }
@@ -833,9 +833,9 @@ export function InsulinPanel({ data, accessCode }: { data: PatientSnapshot; acce
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs text-muted-foreground">
-                <Legend color="hsl(217 91% 60%)" label="CGM (mg/dL)" line />
+                <Legend color="var(--color-primary)" label="CGM (mg/dL)" line />
                 <Legend color={STATUS_META.target.hex} label={`Target ${review.zones.low}–${review.zones.high}`} />
-                <Legend color="hsl(217 91% 60%)" label="Insulin" />
+                <Legend color="var(--color-primary)" label="Insulin" />
                 <Legend color="#A855F7" label="Correction" />
                 <Legend color={STATUS_META.target.hex} label="Meal" />
               </div>

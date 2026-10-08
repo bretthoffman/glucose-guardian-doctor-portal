@@ -66,7 +66,7 @@ export const STATUS_META: Record<
   },
   low: {
     label: "Low",
-    text: "text-orange-500",
+    text: "text-orange-600 dark:text-orange-500",
     chip: "bg-orange-500/15 text-orange-600 border-orange-500/30",
     dot: "bg-orange-500",
     hex: "#F97316",
