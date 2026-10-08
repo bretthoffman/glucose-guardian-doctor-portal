@@ -61,9 +61,9 @@ export async function describeAccessCode(raw: string): Promise<DescribeResult> {
     if (reason === "invalid_code") return { ok: false, message: "That code isn't valid. Check it and try again." };
     if (status === 429) return { ok: false, message: error ?? "Too many attempts. Try again later." };
     if (status === 400) return { ok: false, message: "Enter your license key or invite code." };
-    // The license-key service isn't reachable or not deployed yet (a plain 404 or a 503): carry on
-    // as an invite, which is checked against the email when the account is created.
-    return { ok: true, access: { kind: "invite", code } };
+    // Anything else (offline, server error, check not available): stop here. Nothing past this
+    // screen is shown without a code the server has confirmed.
+    return { ok: false, message: "We couldn't check that code right now. Please try again in a few minutes." };
   }
 }
 
